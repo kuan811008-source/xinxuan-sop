@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: xinxuan-sop-tracker
+    env: static
+    staticPublishPath: .
+    buildCommand: ""
