@@ -171,6 +171,39 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .toast.show{opacity:1}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+/* ====== Mobile ====== */
+.mobile-back{display:none}
+@media(max-width:640px){
+  header{height:auto;min-height:48px;padding:8px 12px;flex-wrap:wrap;gap:4px}
+  .h-title{font-size:.9rem}
+  .h-right{gap:5px;flex-wrap:wrap;justify-content:flex-end}
+  .conn-badge{display:none}
+  .h-actions .btn{padding:5px 9px;font-size:.76rem}
+  .sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border)}
+  .main-layout.mobile-detail .sidebar{display:none}
+  .main-layout:not(.mobile-detail) .content{display:none}
+  .mobile-back{display:flex;align-items:center;gap:6px;padding:10px 0 8px;
+    font-size:.88rem;color:var(--primary);cursor:pointer;font-weight:600;border:none;
+    background:transparent;font-family:inherit;width:100%}
+  .content{padding:12px}
+  .progress-row{flex-wrap:wrap}
+  .p-stat{flex:0 0 calc(50% - 5px)}
+  .p-num{font-size:1.2rem}
+  .step-item{padding:12px 10px;min-height:48px}
+  .step-name{font-size:.85rem}
+  .step-tag{font-size:.68rem;padding:2px 6px}
+  .detail-hd{flex-direction:column;gap:8px}
+  .detail-actions{margin-left:0;justify-content:flex-start}
+  .detail-title{font-size:1rem}
+  .sg-name{font-size:.84rem}
+  .sg-dl{font-size:.72rem}
+  .badge{font-size:.68rem;padding:2px 8px}
+  .bottom-bar{padding:0 12px}
+  .toast{bottom:60px;max-width:88vw;white-space:normal;text-align:center}
+  .modal-box{max-width:95vw;padding:18px}
+  .s-card{padding:12px}
+  .s-name{font-size:.9rem}
+}
 </style>
 </head>
 <body>
@@ -192,7 +225,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   </div>
 </header>
 
-<div class="main-layout">
+<div class="main-layout" id="mainLayout">
   <aside class="sidebar">
     <div class="sidebar-hd">
       <button class="btn btn-primary btn-full" onclick="openSessionModal()">＋ 新增場次</button>
@@ -330,7 +363,7 @@ function renderMain(){
   let banner='';
   if(allDone)banner=`<div class="alert-banner alert-done">✅ 此場次所有步驟已全部完成！</div>`;
   else if(overdue>0)banner=`<div class="alert-banner alert-overdue">⚠ 此場次有 ${overdue} 個步驟已超過截止時間！</div>`;
-  el.innerHTML=`<div class="detail-hd">
+  el.innerHTML=`<button class="mobile-back" onclick="showMobileList()">← 返回場次列表</button><div class="detail-hd">
     <div><div class="detail-title">${esc(session.name)}</div>
       <div class="detail-meta"><b>📅 直播日：${fmtDt(session.liveDate)}</b></div></div>
     <div class="detail-actions">
@@ -402,7 +435,8 @@ function renderDrawer(){
 
 function render(){renderList();renderMain();if(drawerOpen)renderDrawer();}
 
-function selSession(id){selId=id;render();}
+function selSession(id){selId=id;if(window.innerWidth<=640)document.getElementById('mainLayout').classList.add('mobile-detail');render();}
+function showMobileList(){document.getElementById('mainLayout').classList.remove('mobile-detail');}
 
 function openSessionModal(sid){
   const s=sid?appData.sessions.find(x=>x.sessionId===sid):null;
