@@ -217,7 +217,7 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-let appData={groups:[],sessions:[]};
+let appData={sopTemplates:[],sessions:[]};
 let expandedIds=new Set();
 let mobileExpandedIds=new Set();
 const DAY_MS=86400000;
@@ -232,29 +232,39 @@ function abbr(name){
 
 /* ── data loading ───────────────────────────── */
 async function loadData(){
-  const[grpR,stpR,sesR,prR]=await Promise.all([
+  const[tplR,grpR,stpR,sesR,prR]=await Promise.all([
+    db.from('sop_templates').select('*').order('sort_order'),
     db.from('sop_groups').select('*').order('offset_hours'),
     db.from('sop_steps').select('*').order('sort_order'),
     db.from('sessions').select('*').order('live_date',{ascending:true}),
     db.from('session_progress').select('*')
   ]);
-  const groups=grpR.data||[],steps=stpR.data||[],sessions=sesR.data||[],progress=prR.data||[];
-  appData.groups=groups.map(g=>({
-    groupId:g.id,groupName:g.group_name,offsetHours:parseFloat(g.offset_hours),
-    steps:steps.filter(s=>s.group_id===g.id)
-      .sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
-      .map(s=>({stepId:s.id,name:s.name,owner:s.owner||'',order:s.sort_order}))
+  const templates=tplR.data||[],groups=grpR.data||[],steps=stpR.data||[],sessions=sesR.data||[],progress=prR.data||[];
+  appData.sopTemplates=templates.map(t=>({
+    templateId:t.id,name:t.name,
+    groups:groups.filter(g=>g.template_id===t.id).map(g=>({
+      groupId:g.id,groupName:g.group_name,offsetHours:parseFloat(g.offset_hours),
+      steps:steps.filter(s=>s.group_id===g.id)
+        .sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+        .map(s=>({stepId:s.id,name:s.name,owner:s.owner||'',order:s.sort_order}))
+    }))
   }));
   appData.sessions=sessions.map(s=>{
     const prog={};
     progress.filter(p=>p.session_id===s.id&&p.completed)
       .forEach(p=>{prog[p.step_id]={completed:true,completedAt:p.completed_at};});
-    return{sessionId:s.id,name:s.name,liveDate:s.live_date,progress:prog};
+    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,progress:prog};
   });
   const p=n=>String(n).padStart(2,'0');
   const now=new Date();
   document.getElementById('updateTime').textContent=
     `更新：${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+}
+function getSessionTemplate(session){
+  return appData.sopTemplates.find(t=>t.templateId===session?.sopTemplateId)||appData.sopTemplates[0]||{groups:[]};
+}
+function getSessionGroups(session){
+  return [...(getSessionTemplate(session).groups||[])].sort((a,b)=>a.offsetHours-b.offsetHours);
 }
 
 /* ── status helpers ─────────────────────────── */
@@ -282,9 +292,10 @@ function groupStatus(group,session){
   return'OK';
 }
 function isSessionDone(session){
-  const total=appData.groups.reduce((n,g)=>n+g.steps.length,0);
+  const groups=getSessionGroups(session);
+  const total=groups.reduce((n,g)=>n+g.steps.length,0);
   if(!total)return false;
-  return appData.groups.every(g=>g.steps.every(st=>session.progress[st.stepId]?.completed));
+  return groups.every(g=>g.steps.every(st=>session.progress[st.stepId]?.completed));
 }
 
 /* ── formatters ─────────────────────────────── */
@@ -331,7 +342,6 @@ function barClass(group,session,phaseStartTs,phaseEndTs){
 function renderMobileCards(active){
   const mCards=document.getElementById('mobileCards');
   mCards.style.display='flex';
-  const sortedGroups=[...appData.groups].sort((a,b)=>a.offsetHours-b.offsetHours);
   const colMap={
     'bc-done':'background:#bbf7d0;border-color:#4ade80;color:#166534',
     'bc-overdue':'background:#fca5a5;border-color:#f87171;color:#991b1b',
@@ -340,6 +350,7 @@ function renderMobileCards(active){
     'bc-future':'background:#e2e8f0;border-color:#cbd5e1;color:#94a3b8'
   };
   mCards.innerHTML=active.map(session=>{
+    const sortedGroups=getSessionGroups(session);
     const liveTs=new Date(session.liveDate).getTime();
     const dl=dayLabel(session.liveDate);
     const hasOv=sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='OVERDUE'));
@@ -369,7 +380,7 @@ function renderMobileCards(active){
         <span>${isOpen?'▲ 收起步驟':'▼ 展開步驟詳情'}</span>
         <span class="mc-chevron">▼</span>
       </div>
-      ${isOpen?`<div class="mc-body">${renderExpand(session,sortedGroups)}</div>`:''}
+      ${isOpen?`<div class="mc-body">${renderExpand(session,getSessionGroups(session))}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -391,12 +402,13 @@ function render(){
   mCards.style.display='none';
   board.style.display='block';
 
-  const sortedGroups=[...appData.groups].sort((a,b)=>a.offsetHours-b.offsetHours);
-  const maxOffset=sortedGroups.length?sortedGroups[sortedGroups.length-1].offsetHours:336;
-
-  /* X-axis range (snap to day boundaries) */
+  /* X-axis range (snap to day boundaries) — per-session templates */
   const liveTimes=active.map(s=>new Date(s.liveDate).getTime());
-  const endTimes=active.map(s=>new Date(s.liveDate).getTime()+maxOffset*3600000);
+  const endTimes=active.map(s=>{
+    const grps=getSessionGroups(s);
+    const maxOff=grps.length?grps[grps.length-1].offsetHours:336;
+    return new Date(s.liveDate).getTime()+maxOff*3600000;
+  });
   const xMinRaw=Math.min(...liveTimes,Date.now()-DAY_MS);
   const xMaxRaw=Math.max(...endTimes,Date.now()+DAY_MS);
   const xMin=Math.floor(xMinRaw/DAY_MS)*DAY_MS;
@@ -424,6 +436,7 @@ function render(){
   /* ── session rows ── */
   let rows='';
   for(const session of active){
+    const sortedGroups=getSessionGroups(session);
     const liveTs=new Date(session.liveDate).getTime();
     const dl=dayLabel(session.liveDate);
     const hasOv=sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='OVERDUE'));
@@ -457,7 +470,7 @@ function render(){
       <div class="row-bars" style="min-width:${totalW}px">${barsHtml}</div>
     </div>
     <div class="expand-panel${isExp?' open':''}" id="exp-${session.sessionId}">
-      <div class="expand-inner">${renderExpand(session,sortedGroups)}</div>
+      <div class="expand-inner">${renderExpand(session,getSessionGroups(session))}</div>
     </div>`;
   }
 
@@ -532,6 +545,7 @@ function toggleExpand(sid){
 function setupRealtime(){
   const reload=()=>loadData().then(render);
   db.channel('gantt-rt')
+    .on('postgres_changes',{event:'*',schema:'public',table:'sop_templates'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sop_groups'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sop_steps'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sessions'},reload)

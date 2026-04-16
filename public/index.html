@@ -151,6 +151,11 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   padding:7px;border:1px dashed #cbd5e1;border-radius:6px;background:transparent;
   color:var(--text-muted);font-size:.8rem;cursor:pointer;transition:all .15s;font-family:inherit}
 .sop-add-btn:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
+.sop-tabs{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:10px;border-bottom:2px solid var(--border);padding-bottom:8px}
+.sop-tab{padding:5px 14px;border-radius:6px 6px 0 0;font-size:.82rem;font-weight:500;cursor:pointer;color:var(--text-sub);transition:all .15s;border:1px solid transparent;border-bottom:none}
+.sop-tab:hover{background:#f1f5f9;color:var(--text)}
+.sop-tab.active{background:var(--primary-light);color:var(--primary);border-color:#93c5fd;border-bottom-color:var(--primary-light)}
+.sop-tpl-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f8fafc;border-radius:var(--r);border:1px solid var(--border);margin-bottom:12px}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;
   display:none;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
@@ -245,6 +250,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <div class="drawer-hd">
     <div class="drawer-title">⚙ SOP 步驟設定</div>
     <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="openTemplateModal()">＋ 新增SOP</button>
       <button class="btn btn-primary btn-sm" onclick="openGroupModal()">＋ 新增步驟組</button>
       <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">✕ 關閉</button>
     </div>
@@ -263,36 +269,48 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-let appData={sopTemplate:[],sessions:[]};
-let selId=null,drawerOpen=false,pendingSelId=null;
+let appData={sopTemplates:[],sessions:[]};
+let selId=null,drawerOpen=false,pendingSelId=null,drawerTemplateId=null;
 
 async function loadFromDB(){
-  const[grpRes,stpRes,sesRes,prRes]=await Promise.all([
+  const[tplRes,grpRes,stpRes,sesRes,prRes]=await Promise.all([
+    db.from('sop_templates').select('*').order('sort_order'),
     db.from('sop_groups').select('*').order('offset_hours'),
     db.from('sop_steps').select('*').order('sort_order'),
     db.from('sessions').select('*').order('live_date',{ascending:false}),
     db.from('session_progress').select('*')
   ]);
-  const groups=grpRes.data||[],steps=stpRes.data||[],sessions=sesRes.data||[],progress=prRes.data||[];
-  appData.sopTemplate=groups.map(g=>({
-    groupId:g.id,groupName:g.group_name,offsetHours:parseFloat(g.offset_hours),
-    steps:steps.filter(s=>s.group_id===g.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
-      .map(s=>({stepId:s.id,name:s.name,owner:s.owner||'',order:s.sort_order}))
+  const templates=tplRes.data||[],groups=grpRes.data||[],steps=stpRes.data||[],sessions=sesRes.data||[],progress=prRes.data||[];
+  appData.sopTemplates=templates.map(t=>({
+    templateId:t.id,name:t.name,
+    groups:groups.filter(g=>g.template_id===t.id).map(g=>({
+      groupId:g.id,groupName:g.group_name,offsetHours:parseFloat(g.offset_hours),
+      steps:steps.filter(s=>s.group_id===g.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+        .map(s=>({stepId:s.id,name:s.name,owner:s.owner||'',order:s.sort_order}))
+    }))
   }));
   appData.sessions=sessions.map(s=>{
     const prog={};
     progress.filter(p=>p.session_id===s.id&&p.completed)
       .forEach(p=>{prog[p.step_id]={completed:true,completedAt:p.completed_at,note:p.note||''};});
-    return{sessionId:s.id,name:s.name,liveDate:s.live_date,progress:prog};
+    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,progress:prog};
   });
+  if(!drawerTemplateId&&appData.sopTemplates.length)drawerTemplateId=appData.sopTemplates[0].templateId;
   if(pendingSelId){selId=pendingSelId;pendingSelId=null;}
   if(selId&&!appData.sessions.find(s=>s.sessionId===selId))selId=null;
   if(!selId&&appData.sessions.length)selId=appData.sessions[0].sessionId;
+}
+function getSessionTemplate(session){
+  return appData.sopTemplates.find(t=>t.templateId===session?.sopTemplateId)||appData.sopTemplates[0]||{templateId:'',name:'',groups:[]};
+}
+function getSessionGroups(session){
+  return [...(getSessionTemplate(session).groups||[])].sort((a,b)=>a.offsetHours-b.offsetHours);
 }
 
 function setupRealtime(){
   const reload=()=>loadFromDB().then(render);
   db.channel('sop-rt')
+    .on('postgres_changes',{event:'*',schema:'public',table:'sop_templates'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sop_groups'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sop_steps'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sessions'},reload)
@@ -321,8 +339,9 @@ function groupStatus(group,session){
   if(done===steps.length)return'DONE';if(ov)return'OVERDUE';if(wn)return'WARN';return'OK';
 }
 function sessionStatus(session){
+  const groups=getSessionGroups(session);
   let ov=false,wn=false,total=0,done=0;
-  for(const g of appData.sopTemplate)for(const st of g.steps){
+  for(const g of groups)for(const st of g.steps){
     total++;const r=stepStatus(st.stepId,g,session);
     if(r.s==='DONE')done++;else if(r.s==='OVERDUE')ov=true;else if(r.s==='WARN')wn=true;
   }
@@ -357,7 +376,7 @@ function renderMain(){
   if(!selId){el.innerHTML=`<div class="empty-main"><div class="icon">📋</div><p>請從左側選擇場次<br>或點擊「新增場次」開始追蹤</p></div>`;return;}
   const session=appData.sessions.find(s=>s.sessionId===selId);
   if(!session){selId=null;renderMain();return;}
-  const groups=[...appData.sopTemplate].sort((a,b)=>a.offsetHours-b.offsetHours);
+  const groups=getSessionGroups(session);
   let total=0,done=0,overdue=0;
   for(const g of groups)for(const st of g.steps){total++;const r=stepStatus(st.stepId,g,session);if(r.s==='DONE')done++;else if(r.s==='OVERDUE')overdue++;}
   const pct=total?Math.round(done/total*100):0,allDone=total>0&&done===total;
@@ -366,7 +385,7 @@ function renderMain(){
   else if(overdue>0)banner=`<div class="alert-banner alert-overdue">⚠ 此場次有 ${overdue} 個步驟已超過截止時間！</div>`;
   el.innerHTML=`<button class="mobile-back" onclick="showMobileList()">← 返回場次列表</button><div class="detail-hd">
     <div><div class="detail-title">${esc(session.name)}</div>
-      <div class="detail-meta"><b>📅 直播日：${fmtDt(session.liveDate)}</b></div></div>
+      <div class="detail-meta"><b>📅 直播日：${fmtDt(session.liveDate)}</b> <b>📋 ${esc(getSessionTemplate(session).name||'SOP')}</b></div></div>
     <div class="detail-actions">
       <button class="btn btn-ghost btn-sm" onclick="openSessionModal('${session.sessionId}')">✏ 編輯</button>
       <button class="btn btn-danger btn-sm" onclick="confirmDel('${session.sessionId}')">✕ 刪除</button>
@@ -409,30 +428,45 @@ function renderStep(step,group,session){
 
 function renderDrawer(){
   const el=document.getElementById('drawerBody');
-  const groups=[...appData.sopTemplate].sort((a,b)=>a.offsetHours-b.offsetHours);
-  if(!groups.length){el.innerHTML=`<div style="text-align:center;padding:24px;color:var(--text-muted)">尚無步驟組</div>`;return;}
-  el.innerHTML=groups.map((g,i)=>{
-    const steps=[...g.steps].sort((a,b)=>(a.order||0)-(b.order||0));
-    return`<div class="sop-group"><div class="sop-g-hd">
-      <div><div class="sop-g-title">第 ${i+1} 組：${esc(g.groupName||'')}（${steps.length} 個步驟）</div>
-        <div class="sop-g-sub">截止：直播 ${fmtOffset(g.offsetHours)}</div></div>
-      <div class="sop-g-actions">
-        <button class="btn btn-ghost btn-xs" onclick="openGroupModal('${g.groupId}')">✏ 編輯</button>
-        <button class="btn btn-danger btn-xs" onclick="confirmDelGroup('${g.groupId}')">✕</button>
-      </div></div>
-      <div class="sop-steps">
-        ${steps.map((st,si)=>`<div class="sop-step">
-          <div class="sop-step-num">${si+1}</div>
-          <div class="sop-step-info"><div class="sop-step-name">${esc(st.name)}</div>
-            <div class="sop-step-owner">${st.owner?'👤 '+esc(st.owner):'（無負責人）'}</div></div>
-          <div class="sop-step-actions">
-            <button class="btn btn-ghost btn-xs" onclick="openStepModal('${g.groupId}','${st.stepId}')">✏</button>
-            <button class="btn btn-danger btn-xs" onclick="confirmDelStep('${g.groupId}','${st.stepId}')">✕</button>
-          </div></div>`).join('')}
-        <button class="sop-add-btn" onclick="openStepModal('${g.groupId}')">＋ 在此組新增步驟</button>
-      </div></div>`;
-  }).join('');
+  if(!appData.sopTemplates.length){el.innerHTML=`<div style="text-align:center;padding:24px;color:var(--text-muted)">尚無 SOP，請點擊右上方「＋ 新增SOP」建立</div>`;return;}
+  const tpl=appData.sopTemplates.find(t=>t.templateId===drawerTemplateId)||appData.sopTemplates[0];
+  if(!drawerTemplateId)drawerTemplateId=tpl.templateId;
+  const groups=[...tpl.groups].sort((a,b)=>a.offsetHours-b.offsetHours);
+  const tabs=appData.sopTemplates.map(t=>`<div class="sop-tab${t.templateId===tpl.templateId?' active':''}" onclick="setDrawerTemplate('${t.templateId}')">${esc(t.name)}</div>`).join('');
+  const usedCount=appData.sessions.filter(s=>s.sopTemplateId===tpl.templateId).length;
+  el.innerHTML=`
+    <div class="sop-tabs">${tabs}</div>
+    <div class="sop-tpl-bar">
+      <span style="font-size:.8rem;color:var(--text-sub)">已有 <b>${usedCount}</b> 個場次使用此 SOP</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-xs" onclick="openTemplateModal('${tpl.templateId}')">✏ 重命名</button>
+        ${appData.sopTemplates.length>1?`<button class="btn btn-danger btn-xs" onclick="confirmDelTemplate('${tpl.templateId}')">✕ 刪除此SOP</button>`:''}
+      </div>
+    </div>
+    ${groups.map((g,i)=>{
+      const steps=[...g.steps].sort((a,b)=>(a.order||0)-(b.order||0));
+      return`<div class="sop-group"><div class="sop-g-hd">
+        <div><div class="sop-g-title">第 ${i+1} 組：${esc(g.groupName||'')}（${steps.length} 個步驟）</div>
+          <div class="sop-g-sub">截止：直播 ${fmtOffset(g.offsetHours)}</div></div>
+        <div class="sop-g-actions">
+          <button class="btn btn-ghost btn-xs" onclick="openGroupModal('${g.groupId}')">✏ 編輯</button>
+          <button class="btn btn-danger btn-xs" onclick="confirmDelGroup('${g.groupId}')">✕</button>
+        </div></div>
+        <div class="sop-steps">
+          ${steps.map((st,si)=>`<div class="sop-step">
+            <div class="sop-step-num">${si+1}</div>
+            <div class="sop-step-info"><div class="sop-step-name">${esc(st.name)}</div>
+              <div class="sop-step-owner">${st.owner?'👤 '+esc(st.owner):'（無負責人）'}</div></div>
+            <div class="sop-step-actions">
+              <button class="btn btn-ghost btn-xs" onclick="openStepModal('${g.groupId}','${st.stepId}')">✏</button>
+              <button class="btn btn-danger btn-xs" onclick="confirmDelStep('${g.groupId}','${st.stepId}')">✕</button>
+            </div></div>`).join('')}
+          <button class="sop-add-btn" onclick="openStepModal('${g.groupId}')">＋ 在此組新增步驟</button>
+        </div></div>`;
+    }).join('')}
+    ${!groups.length?`<div style="text-align:center;padding:24px;color:var(--text-muted)">此 SOP 尚無步驟組<br>點擊右上方「＋ 新增步驟組」</div>`:''}`;
 }
+function setDrawerTemplate(tid){drawerTemplateId=tid;renderDrawer();}
 
 function render(){renderList();renderMain();if(drawerOpen)renderDrawer();}
 
@@ -441,11 +475,15 @@ function showMobileList(){document.getElementById('mainLayout').classList.remove
 
 function openSessionModal(sid){
   const s=sid?appData.sessions.find(x=>x.sessionId===sid):null;
+  const defTplId=s?.sopTemplateId||appData.sopTemplates[0]?.templateId||'';
+  const tplOpts=appData.sopTemplates.map(t=>`<option value="${t.templateId}"${t.templateId===defTplId?' selected':''}>${esc(t.name)}</option>`).join('');
   openModal(`<div class="modal-title">${s?'編輯場次':'新增直播場次'}</div>
     <div class="form-group"><label class="form-label">場次名稱 *</label>
       <input class="form-input" id="f-name" placeholder="例：2026-04-15 春季直播" value="${s?ea(s.name):''}"></div>
     <div class="form-group"><label class="form-label">直播日期時間 *</label>
       <input class="form-input" type="datetime-local" id="f-date" value="${s?dtLocal(s.liveDate):''}"></div>
+    <div class="form-group"><label class="form-label">使用 SOP *</label>
+      <select class="form-input" id="f-tpl">${tplOpts||'<option value="">（尚無 SOP 模板）</option>'}</select></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" id="saveBtn" onclick="saveSession('${sid||''}')">儲存</button>
@@ -454,11 +492,12 @@ function openSessionModal(sid){
 }
 async function saveSession(sid){
   const name=document.getElementById('f-name').value.trim(),dv=document.getElementById('f-date').value;
+  const tplId=document.getElementById('f-tpl')?.value||appData.sopTemplates[0]?.templateId||null;
   if(!name){alert('請輸入場次名稱');return;}if(!dv){alert('請選擇直播日期時間');return;}
   setBtnLoading('saveBtn',true);
   const liveDate=new Date(dv).toISOString();
-  if(sid){await db.from('sessions').update({name,live_date:liveDate}).eq('id',sid);}
-  else{const id=genId();pendingSelId=id;await db.from('sessions').insert({id,name,live_date:liveDate});}
+  if(sid){await db.from('sessions').update({name,live_date:liveDate,sop_template_id:tplId}).eq('id',sid);}
+  else{const id=genId();pendingSelId=id;await db.from('sessions').insert({id,name,live_date:liveDate,sop_template_id:tplId});}
   closeModal();await loadFromDB();render();
 }
 function confirmDel(sid){
@@ -515,7 +554,7 @@ async function saveGroup(gid){
   if(!name){alert('請輸入步驟組名稱');return;}if(!v||v<=0){alert('請輸入有效的截止時間');return;}
   const h=unit==='days'?v*24:v;setBtnLoading('saveBtn',true);
   if(gid){await db.from('sop_groups').update({group_name:name,offset_hours:h}).eq('id',gid);}
-  else{await db.from('sop_groups').insert({id:genId(),group_name:name,offset_hours:h,sort_order:h});}
+  else{await db.from('sop_groups').insert({id:genId(),group_name:name,offset_hours:h,sort_order:h,template_id:drawerTemplateId});}
   closeModal();await loadFromDB();render();if(drawerOpen)renderDrawer();
 }
 function confirmDelGroup(gid){
@@ -560,6 +599,38 @@ function confirmDelStep(gid,sid){
 }
 async function delStep(sid){
   await db.from('sop_steps').delete().eq('id',sid);
+  closeModal();await loadFromDB();render();if(drawerOpen)renderDrawer();
+}
+
+function openTemplateModal(tid){
+  const t=tid?appData.sopTemplates.find(x=>x.templateId===tid):null;
+  openModal(`<div class="modal-title">${t?'重命名 SOP':'新增 SOP 模板'}</div>
+    <div class="form-group"><label class="form-label">SOP 名稱 *</label>
+      <input class="form-input" id="f-tname" placeholder="例：標準叫貨SOP" value="${t?ea(t.name):''}"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveTemplate('${tid||''}')">儲存</button></div>`);
+  setTimeout(()=>document.getElementById('f-tname').focus(),50);
+}
+async function saveTemplate(tid){
+  const name=document.getElementById('f-tname').value.trim();
+  if(!name){alert('請輸入 SOP 名稱');return;}
+  setBtnLoading('saveBtn',true);
+  if(tid){await db.from('sop_templates').update({name}).eq('id',tid);}
+  else{const id=genId();drawerTemplateId=id;await db.from('sop_templates').insert({id,name,sort_order:Date.now()});}
+  closeModal();await loadFromDB();render();if(drawerOpen)renderDrawer();
+}
+function confirmDelTemplate(tid){
+  const t=appData.sopTemplates.find(x=>x.templateId===tid);if(!t)return;
+  if(appData.sopTemplates.length<=1){alert('至少需要保留一個 SOP 模板');return;}
+  const usedCount=appData.sessions.filter(s=>s.sopTemplateId===tid).length;
+  openModal(`<div class="modal-title" style="color:#ef4444">⚠ 刪除 SOP</div>
+    <p style="font-size:.875rem;color:#475569;margin-bottom:16px">確定要刪除「${esc(t.name)}」嗎？${usedCount>0?`<br><br><strong style="color:#ef4444">⚠ 有 ${usedCount} 個場次正在使用此 SOP，刪除後這些場次將無對應 SOP。</strong>`:''}<br>此組所有步驟也將一併刪除，無法還原。</p>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-danger" onclick="delTemplate('${tid}')">確認刪除</button></div>`);
+}
+async function delTemplate(tid){
+  await db.from('sop_templates').delete().eq('id',tid);
+  if(drawerTemplateId===tid)drawerTemplateId=null;
   closeModal();await loadFromDB();render();if(drawerOpen)renderDrawer();
 }
 
