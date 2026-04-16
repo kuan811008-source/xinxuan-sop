@@ -467,6 +467,7 @@ function renderDrawer(){
     ${!groups.length?`<div style="text-align:center;padding:24px;color:var(--text-muted)">此 SOP 尚無步驟組<br>點擊右上方「＋ 新增步驟組」</div>`:''}`;
 }
 function setDrawerTemplate(tid){drawerTemplateId=tid;renderDrawer();}
+function findGroup(gid){for(const t of appData.sopTemplates){const g=t.groups.find(x=>x.groupId===gid);if(g)return g;}return null;}
 
 function render(){renderList();renderMain();if(drawerOpen)renderDrawer();}
 
@@ -532,7 +533,7 @@ function toggleDrawer(){
 function closeDrawer(){drawerOpen=false;document.getElementById('drawerBg').classList.remove('open');document.getElementById('drawer').classList.remove('open');}
 
 function openGroupModal(gid){
-  const g=gid?appData.sopTemplate.find(x=>x.groupId===gid):null;
+  const g=gid?findGroup(gid):null;
   let val='',unit='days';
   if(g){val=g.offsetHours%24===0?g.offsetHours/24:g.offsetHours;unit=g.offsetHours%24===0?'days':'hours';}
   openModal(`<div class="modal-title">${g?'編輯步驟組':'新增步驟組'}</div>
@@ -558,7 +559,7 @@ async function saveGroup(gid){
   closeModal();await loadFromDB();render();if(drawerOpen)renderDrawer();
 }
 function confirmDelGroup(gid){
-  const g=appData.sopTemplate.find(x=>x.groupId===gid);if(!g)return;
+  const g=findGroup(gid);if(!g)return;
   openModal(`<div class="modal-title" style="color:#ef4444">⚠ 刪除步驟組</div>
     <p style="font-size:.875rem;color:#475569;margin-bottom:16px">確定要刪除「${esc(g.groupName||'')}」？組內所有步驟也將一併刪除。</p>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">取消</button>
@@ -570,7 +571,7 @@ async function delGroup(gid){
 }
 
 function openStepModal(gid,sid){
-  const g=appData.sopTemplate.find(x=>x.groupId===gid);if(!g)return;
+  const g=findGroup(gid);if(!g)return;
   const st=sid?g.steps.find(x=>x.stepId===sid):null;
   openModal(`<div class="modal-title">${st?'編輯步驟':'新增步驟'}</div>
     <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:12px">步驟組：${esc(g.groupName||'')}（直播 ${fmtOffset(g.offsetHours)}）</div>
@@ -586,12 +587,12 @@ async function saveStep(gid,sid){
   const name=document.getElementById('f-sname').value.trim(),owner=document.getElementById('f-sowner').value.trim();
   if(!name){alert('請輸入步驟名稱');return;}setBtnLoading('saveBtn',true);
   if(sid){await db.from('sop_steps').update({name,owner}).eq('id',sid);}
-  else{const g=appData.sopTemplate.find(x=>x.groupId===gid);const maxOrd=g?g.steps.reduce((m,s)=>Math.max(m,s.order||0),0):0;
+  else{const g=findGroup(gid);const maxOrd=g?g.steps.reduce((m,s)=>Math.max(m,s.order||0),0):0;
     await db.from('sop_steps').insert({id:genId(),group_id:gid,name,owner,sort_order:maxOrd+1});}
   closeModal();await loadFromDB();render();if(drawerOpen)renderDrawer();
 }
 function confirmDelStep(gid,sid){
-  const g=appData.sopTemplate.find(x=>x.groupId===gid),st=g?g.steps.find(x=>x.stepId===sid):null;if(!st)return;
+  const g=findGroup(gid),st=g?g.steps.find(x=>x.stepId===sid):null;if(!st)return;
   openModal(`<div class="modal-title" style="color:#ef4444">⚠ 刪除步驟</div>
     <p style="font-size:.875rem;color:#475569;margin-bottom:16px">確定要刪除「${esc(st.name)}」嗎？</p>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">取消</button>
