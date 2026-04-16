@@ -218,6 +218,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <div class="h-right">
     <span class="conn-badge conn-wait" id="connBadge">● 連線中</span>
     <div class="h-actions">
+      <a href="gantt.html" target="_blank" class="btn btn-dark" style="text-decoration:none">📊 進度看板</a>
       <button class="btn btn-dark" onclick="exportData()">↑ 匯出</button>
       <button class="btn btn-dark" onclick="document.getElementById('importInput').click()">↓ 匯入</button>
       <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">
