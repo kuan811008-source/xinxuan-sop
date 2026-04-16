@@ -150,18 +150,39 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .leg{display:flex;align-items:center;gap:5px;font-size:.73rem;color:var(--text-sub)}
 .leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
 
+/* ===== Mobile card view ===== */
+.mobile-cards{display:none;flex-direction:column;gap:10px}
+.mc{background:#fff;border-radius:10px;border:1px solid var(--border);
+  box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}
+.mc-hd{padding:14px 14px 12px;-webkit-tap-highlight-color:transparent;user-select:none;cursor:pointer}
+.mc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mc-name{font-size:.95rem;font-weight:700;flex:1;line-height:1.35}
+.mc-pbar{background:#e2e8f0;border-radius:4px;height:6px;margin-bottom:7px}
+.mc-pbar-fill{height:100%;border-radius:4px;background:#22c55e;transition:width .4s}
+.mc-pct{font-size:.72rem;color:var(--text-sub);font-weight:500;margin-bottom:10px}
+.mc-phases{display:flex;gap:3px}
+.mc-ph{flex:1;height:30px;border-radius:5px;display:flex;align-items:center;
+  justify-content:center;font-size:.58rem;font-weight:700;border:1px solid transparent;
+  overflow:hidden;white-space:nowrap;cursor:default}
+.mc-toggle{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;
+  border-top:1px solid #f1f5f9;font-size:.82rem;color:var(--primary);cursor:pointer;
+  font-weight:500;-webkit-tap-highlight-color:transparent;user-select:none}
+.mc-chevron{transition:transform .2s;color:var(--text-muted);font-size:.7rem}
+.mc.mc-open .mc-chevron{transform:rotate(180deg)}
+.mc-body{display:none;border-top:1px solid var(--border);padding:10px}
+.mc.mc-open .mc-body{display:block}
+
 /* Mobile */
 @media(max-width:640px){
-  :root{--label-w:108px;--bar-h:28px;--row-v:9px}
+  :root{--label-w:90px;--day-px:28px;--bar-h:26px;--row-v:8px}
   header{height:auto;min-height:48px;padding:8px 12px;flex-wrap:wrap;gap:6px;top:0}
-  .gantt-header{top:48px}
+  .gantt-header{top:0}
   .h-title{font-size:.9rem}
-  .h-right{gap:6px;flex-wrap:wrap}
+  .h-right{gap:6px}
   .conn-badge,.update-time{display:none}
   .board-wrap{padding:8px}
-  .expand-inner{padding:10px 10px 12px 10px}
-  .rl-name{font-size:.78rem}
-  .bar-lbl{font-size:.6rem}
+  .exp-g-hd{flex-direction:column;gap:3px}
+  .exp-step{padding:10px}
 }
 </style>
 </head>
@@ -187,6 +208,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
     <p>目前沒有進行中的場次<br>所有叫貨流程均已結案</p>
   </div>
   <div class="board" id="board" style="display:none"></div>
+  <div class="mobile-cards" id="mobileCards" style="display:none"></div>
 </div>
 
 <script>
@@ -197,6 +219,7 @@ const db=createClient(SUPA_URL,SUPA_KEY);
 
 let appData={groups:[],sessions:[]};
 let expandedIds=new Set();
+let mobileExpandedIds=new Set();
 const DAY_MS=86400000;
 const WD=['日','一','二','三','四','五','六'];
 
@@ -304,13 +327,69 @@ function barClass(group,session,phaseStartTs,phaseEndTs){
   return'bc-normal';
 }
 
+/* ── mobile card render ─────────────────────── */
+function renderMobileCards(active){
+  const mCards=document.getElementById('mobileCards');
+  mCards.style.display='flex';
+  const sortedGroups=[...appData.groups].sort((a,b)=>a.offsetHours-b.offsetHours);
+  const colMap={
+    'bc-done':'background:#bbf7d0;border-color:#4ade80;color:#166534',
+    'bc-overdue':'background:#fca5a5;border-color:#f87171;color:#991b1b',
+    'bc-warn':'background:#fde68a;border-color:#fbbf24;color:#854d0e',
+    'bc-normal':'background:#bfdbfe;border-color:#93c5fd;color:#1e40af',
+    'bc-future':'background:#e2e8f0;border-color:#cbd5e1;color:#94a3b8'
+  };
+  mCards.innerHTML=active.map(session=>{
+    const liveTs=new Date(session.liveDate).getTime();
+    const dl=dayLabel(session.liveDate);
+    const hasOv=sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='OVERDUE'));
+    const hasWn=!hasOv&&sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='WARN'));
+    const dayCls=hasOv?'d-overdue':hasWn?'d-warn':dl.cls;
+    let total=0,done=0;
+    for(const g of sortedGroups)for(const st of g.steps){total++;if(session.progress[st.stepId]?.completed)done++;}
+    const pct=total?Math.round(done/total*100):0;
+    const phases=sortedGroups.map((g,i)=>{
+      const prev=i>0?sortedGroups[i-1].offsetHours:0;
+      const cls=barClass(g,session,liveTs+prev*3600000,liveTs+g.offsetHours*3600000);
+      return`<div class="mc-ph" style="${colMap[cls]||colMap['bc-future']}" title="${esc(g.groupName)}">${abbr(g.groupName)}</div>`;
+    }).join('');
+    const isOpen=mobileExpandedIds.has(session.sessionId);
+    return`<div class="mc${isOpen?' mc-open':''}">
+      <div class="mc-hd" onclick="toggleMobileCard('${session.sessionId}')">
+        <div class="mc-top">
+          <div class="mc-name">${esc(session.name)}</div>
+          <span class="rl-day ${dayCls}" style="font-size:.72rem;flex-shrink:0">${dl.text}</span>
+        </div>
+        <div style="font-size:.73rem;color:var(--text-muted);margin-bottom:9px">📅 ${fmtDt(session.liveDate)}</div>
+        <div class="mc-pbar"><div class="mc-pbar-fill" style="width:${pct}%"></div></div>
+        <div class="mc-pct">${done} / ${total} 步驟完成（${pct}%）</div>
+        <div class="mc-phases">${phases}</div>
+      </div>
+      <div class="mc-toggle" onclick="toggleMobileCard('${session.sessionId}')">
+        <span>${isOpen?'▲ 收起步驟':'▼ 展開步驟詳情'}</span>
+        <span class="mc-chevron">▼</span>
+      </div>
+      ${isOpen?`<div class="mc-body">${renderExpand(session,sortedGroups)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+function toggleMobileCard(sid){
+  if(mobileExpandedIds.has(sid))mobileExpandedIds.delete(sid);
+  else mobileExpandedIds.add(sid);
+  renderMobileCards(appData.sessions.filter(s=>!isSessionDone(s)));
+}
+
 /* ── main render ────────────────────────────── */
 function render(){
   const active=appData.sessions.filter(s=>!isSessionDone(s));
   const board=document.getElementById('board');
+  const mCards=document.getElementById('mobileCards');
   const empty=document.getElementById('emptyState');
-  if(!active.length){board.style.display='none';empty.style.display='flex';return;}
-  board.style.display='block';empty.style.display='none';
+  if(!active.length){board.style.display='none';mCards.style.display='none';empty.style.display='flex';return;}
+  empty.style.display='none';
+  if(window.innerWidth<=640){board.style.display='none';renderMobileCards(active);return;}
+  mCards.style.display='none';
+  board.style.display='block';
 
   const sortedGroups=[...appData.groups].sort((a,b)=>a.offsetHours-b.offsetHours);
   const maxOffset=sortedGroups.length?sortedGroups[sortedGroups.length-1].offsetHours:336;
