@@ -90,6 +90,52 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .cbar-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:.62rem;
   color:var(--text-sub);white-space:nowrap;font-weight:600}
 .cbar-lbl{font-size:.72rem;color:var(--text-muted);font-weight:600}
+/* charts row */
+.charts-row{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;margin-bottom:18px}
+.charts-row .card{margin-bottom:0}
+/* donut / pie */
+.pie-wrap{display:flex;align-items:center;gap:16px}
+.pie-legend{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.pie-li{display:flex;align-items:center;gap:8px;font-size:.78rem}
+.pie-li .dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.pie-li .pl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-sub)}
+.pie-li .pl-amt{font-weight:600;color:var(--text)}
+.pie-li .pl-pct{color:var(--text-muted);font-size:.72rem;width:36px;text-align:right}
+.pie-empty{display:flex;align-items:center;justify-content:center;height:128px;color:var(--text-muted);font-size:.82rem;width:100%}
+/* budget */
+.budget{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 16px;margin-bottom:18px}
+.bg-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.bg-title{font-size:.84rem;font-weight:700;display:flex;align-items:center;gap:7px}
+.bg-info{font-size:.8rem;color:var(--text-sub)}
+.bg-info b{color:var(--text)}
+.bg-bar{height:10px;background:#e2e8f0;border-radius:6px;overflow:hidden}
+.bg-fill{height:100%;border-radius:6px;transition:width .4s}
+.bg-fill.ok{background:var(--done-badge)}
+.bg-fill.warn{background:var(--warn-badge)}
+.bg-fill.over{background:var(--overdue-badge)}
+.bg-over-msg{margin-top:7px;font-size:.8rem;font-weight:600;color:var(--overdue-text)}
+.bg-empty{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.bg-empty span{font-size:.82rem;color:var(--text-muted)}
+/* search */
+.tb-search{position:relative}
+.tb-search input{padding:7px 10px 7px 30px;border:1px solid #cbd5e1;border-radius:6px;font-size:.84rem;font-family:inherit;width:170px;background:#fff;color:var(--text)}
+.tb-search input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(30,64,175,.1)}
+.tb-search::before{content:'🔍';position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:.78rem;opacity:.6;pointer-events:none}
+/* annual */
+.modal-box.wide{width:560px}
+.yr-nav{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px}
+.yr-nav b{font-size:1.05rem}
+.yr-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.yr-tile{text-align:center;padding:10px 6px;border-radius:var(--r);border:1px solid var(--border)}
+.yr-tile .t-lbl{font-size:.72rem;color:var(--text-muted)}
+.yr-tile .t-num{font-size:1.02rem;font-weight:700;margin-top:3px}
+.yr-scroll{max-height:56vh;overflow-y:auto}
+.yr-table{width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:6px}
+.yr-table th,.yr-table td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--border)}
+.yr-table th{color:var(--text-muted);font-weight:600;font-size:.74rem;position:sticky;top:0;background:#fff}
+.yr-table th:first-child,.yr-table td:first-child{text-align:left}
+.yr-cats{margin-top:14px}
+.yr-cats .yc-title{font-size:.8rem;font-weight:700;margin-bottom:8px}
 /* list */
 .list-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .list-hd .card-title{margin-bottom:0}
@@ -156,7 +202,12 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   .cbar-pair{gap:3px}
   .toolbar{gap:8px}
   .tb-spacer{display:none}
-  .toolbar .btn{width:100%;justify-content:center}
+  .toolbar .btn{flex:1;justify-content:center}
+  .charts-row{grid-template-columns:1fr}
+  .tb-search{flex:1}
+  .tb-search input{width:100%}
+  .modal-box.wide{width:95vw}
+  .yr-table th,.yr-table td{padding:5px 5px;font-size:.74rem}
   .ent-amt{font-size:.96rem}
   .modal-box{max-width:95vw;padding:18px}
   .toast{bottom:20px;max-width:88vw;white-space:normal;text-align:center}
@@ -186,6 +237,8 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <div class="inner">
     <div class="sum-row" id="sumRow"></div>
 
+    <div id="budgetBar"></div>
+
     <div class="toolbar">
       <div class="tb-field">
         <label>月份</label>
@@ -203,15 +256,25 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
         <label>分類</label>
         <select class="ctrl" id="catSel" onchange="onFilterChange()"></select>
       </div>
+      <div class="tb-field tb-search">
+        <input id="searchInput" type="search" placeholder="搜尋備註 / 分類" oninput="onFilterChange()">
+      </div>
       <div class="tb-spacer"></div>
+      <button class="btn btn-ghost" onclick="openAnnualModal()">📅 年度總結</button>
       <button class="btn btn-primary" onclick="openEntryModal()">＋ 新增一筆</button>
     </div>
 
-    <div class="card">
-      <div class="card-title">📊 近 6 個月收支
-        <span class="legend"><span><i class="dot in"></i>收入</span><span><i class="dot ex"></i>支出</span></span>
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">📊 近 6 個月收支
+          <span class="legend"><span><i class="dot in"></i>收入</span><span><i class="dot ex"></i>支出</span></span>
+        </div>
+        <div id="chart"></div>
       </div>
-      <div id="chart"></div>
+      <div class="card">
+        <div class="card-title" id="pieTitle">🥧 本月支出分類</div>
+        <div id="pie"></div>
+      </div>
     </div>
 
     <div class="list-hd">
@@ -237,7 +300,14 @@ const DEFAULT_CATS={
   expense:['飲食','交通','購物','娛樂','居家','醫療','教育','通訊','其他']
 };
 let entries=[];
-let filterMonth='',filterType='all',filterCat='all';
+let filterMonth='',filterType='all',filterCat='all',filterSearch='';
+let annualYear=null;
+const PIE_COLORS=['#3b82f6','#ef4444','#f59e0b','#22c55e','#8b5cf6','#ec4899','#14b8a6','#f97316','#64748b','#eab308','#06b6d4','#a855f7'];
+// 每月預算存本機（此裝置私有），不進雲端
+const BUDGET_KEY='xinxuan_ledger_budget';
+let monthlyBudget=0;
+function loadBudget(){const v=parseFloat(localStorage.getItem(BUDGET_KEY));monthlyBudget=isNaN(v)?0:v;}
+function saveBudgetVal(v){monthlyBudget=v;try{localStorage.setItem(BUDGET_KEY,String(v));}catch(e){}}
 
 // ── DATA ──────────────────────────────────────────────────
 async function loadFromDB(){
@@ -284,7 +354,7 @@ function catOptions(type){
 }
 
 // ── RENDER ────────────────────────────────────────────────
-function render(){renderFilters();renderSummary();renderChart();renderList();}
+function render(){renderFilters();renderSummary();renderBudget();renderChart();renderPie();renderList();}
 
 function renderFilters(){
   // month options: all months present in data + current month, desc
@@ -307,10 +377,12 @@ function renderFilters(){
 }
 
 function filtered(){
+  const q=filterSearch.trim().toLowerCase();
   return entries.filter(e=>{
     if(filterMonth!=='all'&&monthOf(e.date)!==filterMonth)return false;
     if(filterType!=='all'&&e.type!==filterType)return false;
     if(filterCat!=='all'&&e.category!==filterCat)return false;
+    if(q&&!((e.note||'').toLowerCase().includes(q)||(e.category||'').toLowerCase().includes(q)))return false;
     return true;
   });
 }
@@ -365,6 +437,67 @@ function renderChart(){
   }).join('');
 }
 
+function renderBudget(){
+  const el=document.getElementById('budgetBar');
+  if(filterMonth==='all'){el.innerHTML='';return;}
+  const spent=entries.filter(e=>e.type==='expense'&&monthOf(e.date)===filterMonth).reduce((a,e)=>a+e.amount,0);
+  const label=filterMonth.replace('-','/');
+  if(!monthlyBudget||monthlyBudget<=0){
+    el.innerHTML=`<div class="budget"><div class="bg-empty">
+      <span>💡 設定每月預算，隨時掌握花費進度</span>
+      <button class="btn btn-ghost btn-sm" onclick="openBudgetModal()">設定預算</button></div></div>`;
+    return;
+  }
+  const pct=spent/monthlyBudget*100;
+  const cls=pct>100?'over':pct>=80?'warn':'ok';
+  const remain=monthlyBudget-spent;
+  el.innerHTML=`<div class="budget">
+    <div class="bg-top">
+      <div class="bg-title">🎯 ${label} 預算</div>
+      <div class="bg-info">預算 <b>${fmtMoney(monthlyBudget)}</b> · 已花 <b>${fmtMoney(spent)}</b>（${Math.round(pct)}%） · 剩 <b class="${remain>=0?'pos':'neg'}">${fmtMoney(remain)}</b>
+        <button class="btn btn-ghost btn-sm" style="margin-left:6px;padding:2px 8px" onclick="openBudgetModal()">⚙</button></div>
+    </div>
+    <div class="bg-bar"><div class="bg-fill ${cls}" style="width:${Math.min(100,pct)}%"></div></div>
+    ${pct>100?`<div class="bg-over-msg">⚠ 本月已超支 ${fmtMoney(spent-monthlyBudget)}</div>`:''}
+  </div>`;
+}
+
+function renderPie(){
+  const el=document.getElementById('pie');
+  const scope=filterMonth==='all'?'全部':filterMonth.replace('-','/');
+  document.getElementById('pieTitle').textContent=`🥧 ${scope} 支出分類`;
+  const map={};
+  entries.filter(e=>e.type==='expense'&&(filterMonth==='all'||monthOf(e.date)===filterMonth))
+    .forEach(e=>{const k=e.category||'未分類';map[k]=(map[k]||0)+e.amount;});
+  const items=Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
+  const total=items.reduce((a,i)=>a+i.value,0);
+  if(!total){el.innerHTML=`<div class="pie-empty">此期間尚無支出</div>`;return;}
+  items.forEach((it,i)=>it.color=PIE_COLORS[i%PIE_COLORS.length]);
+  const legend=items.map(it=>{
+    const pct=Math.round(it.value/total*100);
+    return`<div class="pie-li"><span class="dot" style="background:${it.color}"></span>
+      <span class="pl-name">${esc(it.label)}</span>
+      <span class="pl-amt">${fmtMoney(it.value)}</span>
+      <span class="pl-pct">${pct}%</span></div>`;
+  }).join('');
+  el.innerHTML=`<div class="pie-wrap">${donutSVG(items,total)}<div class="pie-legend">${legend}</div></div>`;
+}
+function donutSVG(items,total){
+  let cum=0;
+  const segs=items.map(it=>{
+    const pct=it.value/total*100,off=25-cum;cum+=pct;
+    return`<circle cx="21" cy="21" r="15.915" fill="none" stroke="${it.color}" stroke-width="7"
+      stroke-dasharray="${pct.toFixed(2)} ${(100-pct).toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}" pathLength="100"></circle>`;
+  }).join('');
+  const short=total>=10000?(total/10000).toFixed(1)+'萬':String(Math.round(total));
+  return`<svg viewBox="0 0 42 42" width="128" height="128" style="flex-shrink:0">
+    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#f1f5f9" stroke-width="7"></circle>
+    ${segs}
+    <text x="21" y="19.5" text-anchor="middle" font-size="3" fill="#94a3b8">總支出</text>
+    <text x="21" y="25" text-anchor="middle" font-size="4.2" font-weight="700" fill="#1e293b">${short}</text>
+  </svg>`;
+}
+
 function renderList(){
   const list=filtered();
   document.getElementById('listTitle').textContent=`明細（${list.length} 筆）`;
@@ -395,7 +528,8 @@ function onFilterChange(){
   filterMonth=document.getElementById('monthSel').value;
   filterType=document.getElementById('typeSel').value;
   filterCat=document.getElementById('catSel').value;
-  renderSummary();renderList();
+  filterSearch=document.getElementById('searchInput').value;
+  renderSummary();renderBudget();renderPie();renderList();
 }
 
 // ── MODAL / MUTATIONS ─────────────────────────────────────
@@ -509,8 +643,70 @@ async function importData(event){
   reader.readAsText(file,'UTF-8');
 }
 
+// ── BUDGET ────────────────────────────────────────────────
+function openBudgetModal(){
+  openModal(`
+    <div class="modal-title">設定每月預算</div>
+    <div class="form-group"><label class="form-label">每月支出預算 (NT$)</label>
+      <input type="number" id="f-budget" class="form-input" min="0" step="100" placeholder="例如：30000" value="${monthlyBudget||''}"></div>
+    <p style="font-size:.76rem;color:var(--text-muted);line-height:1.6">預算只存在這台裝置（本機），用來提醒每月花費進度；設為 0 或留空可關閉。</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveBudget()">儲存</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('f-budget').focus(),50);
+}
+function saveBudget(){
+  const v=parseFloat(document.getElementById('f-budget').value)||0;
+  saveBudgetVal(v);renderBudget();closeModal();showToast(v>0?'預算已設定':'已關閉預算');
+}
+
+// ── ANNUAL SUMMARY ────────────────────────────────────────
+function openAnnualModal(){
+  annualYear=parseInt((filterMonth==='all'?curMonth():filterMonth).slice(0,4));
+  renderAnnualModal();
+}
+function changeYear(d){annualYear+=d;renderAnnualModal();}
+function renderAnnualModal(){
+  const y=annualYear,rows=[],catMap={};let yIn=0,yEx=0;
+  for(let m=1;m<=12;m++){
+    const ym=`${y}-${String(m).padStart(2,'0')}`;let inc=0,exp=0;
+    entries.forEach(e=>{if(monthOf(e.date)===ym){
+      if(e.type==='income')inc+=e.amount;
+      else{exp+=e.amount;const k=e.category||'未分類';catMap[k]=(catMap[k]||0)+e.amount;}
+    }});
+    yIn+=inc;yEx+=exp;rows.push({m,inc,exp,bal:inc-exp});
+  }
+  const yBal=yIn-yEx;
+  const monthRows=rows.map(r=>`<tr>
+    <td>${r.m} 月</td>
+    <td style="color:var(--done-text)">${r.inc?fmtMoney(r.inc):'—'}</td>
+    <td style="color:var(--overdue-text)">${r.exp?fmtMoney(r.exp):'—'}</td>
+    <td class="${r.bal>=0?'pos':'neg'}">${(r.inc||r.exp)?fmtMoney(r.bal):'—'}</td></tr>`).join('');
+  const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const catBlock=cats.length?`<div class="yr-cats"><div class="yc-title">全年支出分類 Top ${cats.length}</div>
+    <table class="yr-table"><tbody>${cats.map(([c,v])=>`<tr><td>${esc(c)}</td><td colspan="3">${fmtMoney(v)}（${Math.round(v/yEx*100)}%）</td></tr>`).join('')}</tbody></table></div>`:'';
+  openModal(`
+    <div class="yr-nav">
+      <button class="btn btn-ghost btn-sm" onclick="changeYear(-1)">◀</button>
+      <b>${y} 年度總結</b>
+      <button class="btn btn-ghost btn-sm" onclick="changeYear(1)">▶</button>
+    </div>
+    <div class="yr-tiles">
+      <div class="yr-tile"><div class="t-lbl">全年收入</div><div class="t-num pos">${fmtMoney(yIn)}</div></div>
+      <div class="yr-tile"><div class="t-lbl">全年支出</div><div class="t-num neg">${fmtMoney(yEx)}</div></div>
+      <div class="yr-tile"><div class="t-lbl">全年結餘</div><div class="t-num ${yBal>=0?'pos':'neg'}">${fmtMoney(yBal)}</div></div>
+    </div>
+    <div class="yr-scroll">
+      <table class="yr-table"><thead><tr><th>月份</th><th>收入</th><th>支出</th><th>結餘</th></tr></thead>
+        <tbody>${monthRows}</tbody></table>
+      ${catBlock}
+    </div>
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">關閉</button></div>`,true);
+}
+
 // ── UI PLUMBING ───────────────────────────────────────────
-function openModal(html){document.getElementById('modalBox').innerHTML=html;document.getElementById('modalBg').classList.add('open');}
+function openModal(html,wide){const box=document.getElementById('modalBox');box.innerHTML=html;box.classList.toggle('wide',!!wide);document.getElementById('modalBg').classList.add('open');}
 function closeModal(){document.getElementById('modalBg').classList.remove('open');}
 document.getElementById('modalBg').addEventListener('click',function(e){if(e.target===this)closeModal();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
@@ -519,6 +715,7 @@ function showToast(msg){const el=document.getElementById('toast');el.textContent
 function hideLoading(){const el=document.getElementById('loadingOverlay');if(el){el.style.opacity='0';el.style.transition='opacity .4s';setTimeout(()=>el.remove(),400);}}
 
 filterMonth=curMonth();
+loadBudget();
 (async()=>{
   await loadFromDB();
   hideLoading();
