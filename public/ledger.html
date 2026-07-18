@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>心選記帳本</title>
+<title>個人記帳本</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -171,7 +171,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 </div>
 
 <header>
-  <div class="h-title">心選<em>記帳本</em></div>
+  <div class="h-title">個人<em>記帳本</em></div>
   <div class="h-right">
     <span class="conn-badge conn-wait" id="connBadge">● 連線中</span>
     <div class="h-actions">
@@ -234,7 +234,10 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-const DEFAULT_CATS=['營收','叫貨成本','運費','包裝耗材','人事','平台手續費','雜支','其他'];
+const DEFAULT_CATS={
+  income:['薪資','獎金','投資','其他收入'],
+  expense:['飲食','交通','購物','娛樂','居家','醫療','教育','通訊','其他']
+};
 let entries=[];
 let filterMonth='',filterType='all',filterCat='all';
 
@@ -269,9 +272,17 @@ function curMonth(){return todayStr().slice(0,7);}
 function fmtMonthLabel(ym){const[y,m]=ym.split('-');return`${parseInt(m)}月`;}
 function fmtDate(dateStr){const[y,m,d]=(dateStr||'').split('-');return`${y}/${m}/${d}`;}
 function allCategories(){
-  const set=new Set(DEFAULT_CATS);
+  const set=new Set([...DEFAULT_CATS.income,...DEFAULT_CATS.expense]);
   entries.forEach(e=>{if(e.category)set.add(e.category);});
   return[...set];
+}
+function catsForType(type){
+  const set=new Set(DEFAULT_CATS[type]||[]);
+  entries.forEach(e=>{if(e.type===type&&e.category)set.add(e.category);});
+  return[...set];
+}
+function catOptions(type){
+  return catsForType(type).map(c=>`<option value="${ea(c)}">`).join('');
 }
 
 // ── RENDER ────────────────────────────────────────────────
@@ -395,12 +406,12 @@ function selectType(t){
   modalType=t;
   document.getElementById('optIn').className='type-opt'+(t==='income'?' sel-in':'');
   document.getElementById('optEx').className='type-opt'+(t==='expense'?' sel-ex':'');
+  const dl=document.getElementById('catList');if(dl)dl.innerHTML=catOptions(t);
 }
 function openEntryModal(id){
   const e=id?entries.find(x=>x.id===id):null;
   modalType=e?e.type:'expense';
-  const cats=allCategories();
-  const datalist=cats.map(c=>`<option value="${ea(c)}">`).join('');
+  const datalist=catOptions(modalType);
   openModal(`
     <div class="modal-title">${e?'編輯紀錄':'新增紀錄'}</div>
     <div class="form-group">
@@ -419,7 +430,7 @@ function openEntryModal(id){
       <input id="f-category" class="form-input" list="catList" placeholder="選擇或輸入分類" value="${e?ea(e.category):''}">
       <datalist id="catList">${datalist}</datalist></div>
     <div class="form-group"><label class="form-label">備註（選填）</label>
-      <input id="f-note" class="form-input" placeholder="例如：8/15 直播叫貨團" value="${e?ea(e.note):''}"></div>
+      <input id="f-note" class="form-input" placeholder="例如：午餐、加油、電影票" value="${e?ea(e.note):''}"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" id="saveBtn" onclick="saveEntry('${id||''}')">儲存</button>
