@@ -147,6 +147,13 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .sop-step-name{font-size:.83rem;font-weight:500}
 .sop-step-owner{font-size:.73rem;color:var(--text-muted)}
 .sop-step-actions{display:flex;gap:4px}
+.sop-step-drag{width:24px;height:30px;display:flex;align-items:center;justify-content:center;
+  color:#cbd5e1;cursor:grab;flex-shrink:0;font-size:1.05rem;border-radius:4px;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.sop-step-drag:hover{background:#f1f5f9;color:#94a3b8}
+.sop-step.dragging{opacity:.92;box-shadow:0 4px 14px rgba(0,0,0,.18);
+  border-color:var(--primary);background:#eff6ff;position:relative;z-index:5;user-select:none}
+.sop-step.dragging .sop-step-drag{cursor:grabbing}
 .sop-add-btn{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;
   padding:7px;border:1px dashed #cbd5e1;border-radius:6px;background:transparent;
   color:var(--text-muted);font-size:.8rem;cursor:pointer;transition:all .15s;font-family:inherit}
@@ -427,6 +434,7 @@ function renderStep(step,group,session){
 }
 
 function renderDrawer(){
+  if(stepDrag)return;
   const el=document.getElementById('drawerBody');
   if(!appData.sopTemplates.length){el.innerHTML=`<div style="text-align:center;padding:24px;color:var(--text-muted)">尚無 SOP，請點擊右上方「＋ 新增SOP」建立</div>`;return;}
   const tpl=appData.sopTemplates.find(t=>t.templateId===drawerTemplateId)||appData.sopTemplates[0];
@@ -452,8 +460,9 @@ function renderDrawer(){
           <button class="btn btn-ghost btn-xs" onclick="openGroupModal('${g.groupId}')">✏ 編輯</button>
           <button class="btn btn-danger btn-xs" onclick="confirmDelGroup('${g.groupId}')">✕</button>
         </div></div>
-        <div class="sop-steps">
-          ${steps.map((st,si)=>`<div class="sop-step">
+        <div class="sop-steps" data-gid="${g.groupId}">
+          ${steps.map((st,si)=>`<div class="sop-step" data-step-id="${st.stepId}">
+            <div class="sop-step-drag" title="按住拖曳調整順序" onpointerdown="stepDragStart(event,'${g.groupId}')">⠿</div>
             <div class="sop-step-num">${si+1}</div>
             <div class="sop-step-info"><div class="sop-step-name">${esc(st.name)}</div>
               <div class="sop-step-owner">${st.owner?'👤 '+esc(st.owner):'（無負責人）'}</div></div>
@@ -522,6 +531,52 @@ async function toggleStep(sessionId,stepId){
   if(isDone){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
   else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:true,completed_at:new Date().toISOString(),note:''},{onConflict:'session_id,step_id'});}
   showToast(isDone?'已取消完成':'已標記完成 ✓');
+}
+
+/* ── 步驟拖曳排序 ─────────────────────────── */
+let stepDrag=null;
+function stepDragStart(e,gid){
+  if(e.pointerType==='mouse'&&e.button!==0)return;
+  e.preventDefault();
+  const row=e.target.closest('.sop-step');if(!row)return;
+  stepDrag={gid,row,container:row.parentElement,moved:false};
+  row.classList.add('dragging');
+  document.addEventListener('pointermove',stepDragMove);
+  document.addEventListener('pointerup',stepDragEnd);
+  document.addEventListener('pointercancel',stepDragEnd);
+}
+function stepDragMove(e){
+  if(!stepDrag)return;
+  e.preventDefault();
+  const{row,container}=stepDrag,y=e.clientY;
+  const body=document.getElementById('drawerBody');
+  const br=body.getBoundingClientRect();
+  if(y<br.top+44)body.scrollTop-=10;
+  else if(y>br.bottom-44)body.scrollTop+=10;
+  const sibs=[...container.querySelectorAll('.sop-step')].filter(x=>x!==row);
+  let next=null;
+  for(const sib of sibs){const r=sib.getBoundingClientRect();if(y<r.top+r.height/2){next=sib;break;}}
+  const anchor=next||container.querySelector('.sop-add-btn');
+  if(row.nextElementSibling!==anchor){container.insertBefore(row,anchor);stepDrag.moved=true;}
+}
+async function stepDragEnd(){
+  document.removeEventListener('pointermove',stepDragMove);
+  document.removeEventListener('pointerup',stepDragEnd);
+  document.removeEventListener('pointercancel',stepDragEnd);
+  if(!stepDrag)return;
+  const{gid,row,container,moved}=stepDrag;
+  row.classList.remove('dragging');
+  stepDrag=null;
+  if(!moved)return;
+  const rows=[...container.querySelectorAll('.sop-step')];
+  rows.forEach((x,i)=>{const n=x.querySelector('.sop-step-num');if(n)n.textContent=i+1;});
+  const ids=rows.map(x=>x.dataset.stepId);
+  const g=findGroup(gid);
+  if(g){g.steps.forEach(s=>{const i=ids.indexOf(s.stepId);if(i>-1)s.order=i+1;});
+    g.steps.sort((a,b)=>(a.order||0)-(b.order||0));}
+  await Promise.all(ids.map((id,i)=>db.from('sop_steps').update({sort_order:i+1}).eq('id',id)));
+  showToast('步驟順序已更新 ✓');
+  await loadFromDB();render();if(drawerOpen)renderDrawer();
 }
 
 function toggleDrawer(){

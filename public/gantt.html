@@ -126,7 +126,10 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .b-nm{background:#94a3b8;color:#fff}
 .exp-steps{padding:6px 8px;display:flex;flex-direction:column;gap:4px}
 .exp-step{display:flex;align-items:center;gap:8px;padding:8px 10px;
-  border-radius:6px;border:1px solid var(--border);background:#fff;font-size:.83rem}
+  border-radius:6px;border:1px solid var(--border);background:#fff;font-size:.83rem;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:filter .12s}
+.exp-step:hover{filter:brightness(.96)}
+.exp-step:active{filter:brightness(.92)}
 .exp-step.s-ov{background:#fef2f2;border-color:#fca5a5}
 .exp-step.s-wn{background:#fffbeb;border-color:#fde68a}
 .exp-step.s-dn{background:#f0fdf4;border-color:#bbf7d0}
@@ -143,6 +146,12 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .t-ov{background:#ef4444;color:#fff}
 .t-wn{background:#f59e0b;color:#fff}
 .t-dn{background:#22c55e;color:#fff}
+
+/* Toast */
+.toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
+  background:#1e293b;color:#fff;padding:10px 20px;border-radius:8px;font-size:.85rem;
+  z-index:500;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
 
 /* Legend */
 .legend{display:flex;gap:12px;padding:12px 16px;flex-wrap:wrap;
@@ -210,6 +219,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <div class="board" id="board" style="display:none"></div>
   <div class="mobile-cards" id="mobileCards" style="display:none"></div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
 const SUPA_URL='https://ijnjfpxthoewpwyuzela.supabase.co';
@@ -512,7 +522,7 @@ function renderExpand(session,sortedGroups){
         tag=`<span class="s-tag t-ov">⚠ ${fmtDur(r.h)}</span>`;}
       else if(r.s==='WARN'){cc='wn';
         tag=`<span class="s-tag t-wn">⏰ ${fmtDur(r.h)}後</span>`;}
-      return`<div class="exp-step${r.s==='OVERDUE'?' s-ov':r.s==='WARN'?' s-wn':r.s==='DONE'?' s-dn':''}">
+      return`<div class="exp-step${r.s==='OVERDUE'?' s-ov':r.s==='WARN'?' s-wn':r.s==='DONE'?' s-dn':''}" onclick="toggleStep(event,'${session.sessionId}','${st.stepId}')" title="點擊${r.s==='DONE'?'取消完成':'標記完成'}">
         <div class="s-chk ${cc}">${ic}</div>
         <div class="s-body">
           <div class="s-name ${nc}">${esc(st.name)}</div>
@@ -534,6 +544,21 @@ function renderExpand(session,sortedGroups){
     </div>`;
   }).join('');
 }
+
+async function toggleStep(ev,sessionId,stepId){
+  ev.stopPropagation();
+  const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
+  const isDone=session.progress[stepId]?.completed;
+  if(isDone)delete session.progress[stepId];
+  else session.progress[stepId]={completed:true,completedAt:new Date().toISOString()};
+  const allDone=!isDone&&isSessionDone(session);
+  render();
+  if(isDone){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:true,completed_at:new Date().toISOString(),note:''},{onConflict:'session_id,step_id'});}
+  showToast(isDone?'已取消完成':allDone?'🎉 此場次全部完成，已自看板結案':'已標記完成 ✓');
+}
+let toastTimer;
+function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2200);}
 
 function toggleExpand(sid){
   if(expandedIds.has(sid))expandedIds.delete(sid);
