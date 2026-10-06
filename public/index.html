@@ -177,6 +177,22 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .input-row{display:flex;gap:8px}
 .input-row .form-input{flex:1}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.sess-note{display:flex;gap:7px;align-items:flex-start;background:#fefce8;border:1px solid #fde047;
+  border-radius:8px;padding:9px 12px;margin-bottom:16px;font-size:.84rem;line-height:1.55;
+  color:#713f12;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.sess-note:hover{background:#fef9c3}
+.sess-note .sn-text{flex:1;white-space:pre-wrap;word-break:break-word}
+.sess-note-add{display:inline-flex;align-items:center;gap:5px;margin-bottom:16px;padding:5px 11px;
+  border:1px dashed #d4c54a;border-radius:8px;background:transparent;color:#a16207;font-size:.78rem;
+  cursor:pointer;font-family:inherit}
+.sess-note-add:hover{background:#fefce8}
+.step-note{font-size:.74rem;color:#a16207;margin-top:2px;white-space:pre-wrap;word-break:break-word}
+.s-note-btn{border:none;background:transparent;cursor:pointer;font-size:.9rem;padding:4px 6px;
+  border-radius:5px;flex-shrink:0;opacity:.5;line-height:1;-webkit-tap-highlight-color:transparent}
+.s-note-btn:hover{opacity:1;background:#e2e8f0}
+.note-ta{width:100%;min-height:100px;border:1px solid var(--border);border-radius:8px;padding:10px;
+  font-size:.85rem;font-family:inherit;resize:vertical;line-height:1.5;color:var(--text)}
+.note-ta:focus{outline:2px solid #93c5fd;border-color:var(--primary)}
 .toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
   background:#1e293b;color:#fff;padding:10px 20px;border-radius:8px;font-size:.85rem;
   z-index:500;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
@@ -298,9 +314,9 @@ async function loadFromDB(){
   }));
   appData.sessions=sessions.map(s=>{
     const prog={};
-    progress.filter(p=>p.session_id===s.id&&p.completed)
-      .forEach(p=>{prog[p.step_id]={completed:true,completedAt:p.completed_at,note:p.note||''};});
-    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,progress:prog};
+    progress.filter(p=>p.session_id===s.id&&(p.completed||p.note))
+      .forEach(p=>{prog[p.step_id]={completed:!!p.completed,completedAt:p.completed_at,note:p.note||''};});
+    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,note:s.note||'',progress:prog};
   });
   if(!drawerTemplateId&&appData.sopTemplates.length)drawerTemplateId=appData.sopTemplates[0].templateId;
   if(pendingSelId){selId=pendingSelId;pendingSelId=null;}
@@ -390,6 +406,9 @@ function renderMain(){
   let banner='';
   if(allDone)banner=`<div class="alert-banner alert-done">✅ 此場次所有步驟已全部完成！</div>`;
   else if(overdue>0)banner=`<div class="alert-banner alert-overdue">⚠ 此場次有 ${overdue} 個步驟已超過截止時間！</div>`;
+  const noteHtml=session.note
+    ?`<div class="sess-note" onclick="openSessionNoteModal('${session.sessionId}')" title="點擊編輯備註">📝<span class="sn-text">${esc(session.note)}</span><span style="opacity:.45">✏</span></div>`
+    :`<button class="sess-note-add" onclick="openSessionNoteModal('${session.sessionId}')">📝 ＋ 新增場次備註</button>`;
   el.innerHTML=`<button class="mobile-back" onclick="showMobileList()">← 返回場次列表</button><div class="detail-hd">
     <div><div class="detail-title">${esc(session.name)}</div>
       <div class="detail-meta"><b>📅 直播日：${fmtDt(session.liveDate)}</b> <b>📋 ${esc(getSessionTemplate(session).name||'SOP')}</b></div></div>
@@ -398,6 +417,7 @@ function renderMain(){
       <button class="btn btn-danger btn-sm" onclick="confirmDel('${session.sessionId}')">✕ 刪除</button>
     </div></div>
   ${banner}
+  ${noteHtml}
   <div class="progress-row">
     <div class="p-stat" style="border-color:#22c55e"><div class="p-num" style="color:#22c55e">${done}</div><div class="p-lbl">已完成</div></div>
     <div class="p-stat" style="border-color:#ef4444"><div class="p-num" style="color:#ef4444">${overdue}</div><div class="p-lbl">超時待辦</div></div>
@@ -422,6 +442,7 @@ function renderGroup(group,session,idx){
 }
 function renderStep(step,group,session){
   const r=stepStatus(step.stepId,group,session);
+  const p=session.progress&&session.progress[step.stepId];
   let ic='',cc='',nc='',tag='',extra='';
   if(r.s==='DONE'){ic='✓';cc='dn';nc='dn';tag=`<span class="step-tag tag-dn">已完成</span>`;extra=`<div class="step-done-at">完成於 ${fmtShort(r.at)}</div>`;}
   else if(r.s==='OVERDUE'){cc='ov';tag=`<span class="step-tag tag-ov">⚠ 逾期 ${fmtDur(r.h)}</span>`;}
@@ -429,7 +450,9 @@ function renderStep(step,group,session){
   return`<div class="step-item${r.s==='OVERDUE'?' ov':r.s==='WARN'?' wn':r.s==='DONE'?' dn':''}" onclick="toggleStep('${session.sessionId}','${step.stepId}')">
     <div class="chk ${cc}">${ic}</div>
     <div class="step-info"><div class="step-name ${nc}">${esc(step.name)}</div>
-      ${step.owner?`<div class="step-owner">👤 ${esc(step.owner)}</div>`:''}${extra}</div>
+      ${step.owner?`<div class="step-owner">👤 ${esc(step.owner)}</div>`:''}
+      ${p?.note?`<div class="step-note">💬 ${esc(p.note)}</div>`:''}${extra}</div>
+    <button class="s-note-btn" onclick="openStepNoteModal(event,'${session.sessionId}','${step.stepId}')" title="步驟備註">📝</button>
     ${tag}</div>`;
 }
 
@@ -494,6 +517,8 @@ function openSessionModal(sid){
       <input class="form-input" type="datetime-local" id="f-date" value="${s?dtLocal(s.liveDate):''}"></div>
     <div class="form-group"><label class="form-label">使用 SOP *</label>
       <select class="form-input" id="f-tpl">${tplOpts||'<option value="">（尚無 SOP 模板）</option>'}</select></div>
+    <div class="form-group"><label class="form-label">備註（可留空）</label>
+      <textarea class="note-ta" id="f-note" style="min-height:70px" placeholder="例：廠商A延遲出貨，QC改到週四">${s?esc(s.note||''):''}</textarea></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" id="saveBtn" onclick="saveSession('${sid||''}')">儲存</button>
@@ -503,11 +528,14 @@ function openSessionModal(sid){
 async function saveSession(sid){
   const name=document.getElementById('f-name').value.trim(),dv=document.getElementById('f-date').value;
   const tplId=document.getElementById('f-tpl')?.value||appData.sopTemplates[0]?.templateId||null;
+  const note=document.getElementById('f-note')?.value.trim()||'';
   if(!name){alert('請輸入場次名稱');return;}if(!dv){alert('請選擇直播日期時間');return;}
   setBtnLoading('saveBtn',true);
   const liveDate=new Date(dv).toISOString();
-  if(sid){await db.from('sessions').update({name,live_date:liveDate,sop_template_id:tplId}).eq('id',sid);}
-  else{const id=genId();pendingSelId=id;await db.from('sessions').insert({id,name,live_date:liveDate,sop_template_id:tplId});}
+  let error;
+  if(sid){({error}=await db.from('sessions').update({name,live_date:liveDate,sop_template_id:tplId,note}).eq('id',sid));}
+  else{const id=genId();pendingSelId=id;({error}=await db.from('sessions').insert({id,name,live_date:liveDate,sop_template_id:tplId,note}));}
+  if(error){setBtnLoading('saveBtn',false);alert('儲存失敗：'+error.message+'\n\n若訊息顯示找不到 note 欄位，請先在 Supabase SQL Editor 執行：\nalter table sessions add column if not exists note text;');return;}
   closeModal();await loadFromDB();render();
 }
 function confirmDel(sid){
@@ -524,13 +552,66 @@ async function delSession(sid){
 
 async function toggleStep(sessionId,stepId){
   const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
-  const isDone=session.progress[stepId]?.completed;
-  if(isDone)delete session.progress[stepId];
-  else session.progress[stepId]={completed:true,completedAt:new Date().toISOString()};
+  const cur=session.progress[stepId];
+  const isDone=cur?.completed;
+  const note=cur?.note||'';
+  if(isDone){
+    if(note)session.progress[stepId]={completed:false,completedAt:null,note};
+    else delete session.progress[stepId];
+  }else session.progress[stepId]={completed:true,completedAt:new Date().toISOString(),note};
   render();
-  if(isDone){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
-  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:true,completed_at:new Date().toISOString(),note:''},{onConflict:'session_id,step_id'});}
+  if(isDone&&!note){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:!isDone,completed_at:isDone?null:new Date().toISOString(),note},{onConflict:'session_id,step_id'});}
   showToast(isDone?'已取消完成':'已標記完成 ✓');
+}
+
+/* ── 備註編輯 ─────────────────────────────── */
+function openSessionNoteModal(sessionId){
+  const s=appData.sessions.find(x=>x.sessionId===sessionId);if(!s)return;
+  openModal(`<div class="modal-title">📝 場次備註</div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:12px">${esc(s.name)}</div>
+    <textarea class="note-ta" id="noteTa" placeholder="例：廠商A延遲出貨，QC改到週四；小美請假由小明代理">${esc(s.note||'')}</textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveSessionNote('${sessionId}')">儲存</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('noteTa').focus(),50);
+}
+async function saveSessionNote(sessionId){
+  const note=document.getElementById('noteTa').value.trim();
+  const s=appData.sessions.find(x=>x.sessionId===sessionId);if(!s)return;
+  setBtnLoading('saveBtn',true);
+  const{error}=await db.from('sessions').update({note}).eq('id',sessionId);
+  if(error){setBtnLoading('saveBtn',false);alert('儲存失敗：'+error.message+'\n\n若訊息顯示找不到 note 欄位，請先在 Supabase SQL Editor 執行：\nalter table sessions add column if not exists note text;');return;}
+  s.note=note;closeModal();render();
+  showToast(note?'場次備註已儲存 ✓':'場次備註已清除');
+}
+function openStepNoteModal(ev,sessionId,stepId){
+  ev.stopPropagation();
+  const s=appData.sessions.find(x=>x.sessionId===sessionId);if(!s)return;
+  let stepName='';
+  for(const t of appData.sopTemplates)for(const g of t.groups){const st=g.steps.find(x=>x.stepId===stepId);if(st)stepName=st.name;}
+  const cur=s.progress[stepId];
+  openModal(`<div class="modal-title">💬 步驟備註</div>
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:12px">${esc(s.name)} — ${esc(stepName)}</div>
+    <textarea class="note-ta" id="noteTa" placeholder="例：等廠商回覆數量，預計明早確認">${esc(cur?.note||'')}</textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveStepNote('${sessionId}','${stepId}')">儲存</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('noteTa').focus(),50);
+}
+async function saveStepNote(sessionId,stepId){
+  const note=document.getElementById('noteTa').value.trim();
+  const s=appData.sessions.find(x=>x.sessionId===sessionId);if(!s)return;
+  const cur=s.progress[stepId];
+  const completed=cur?.completed||false;
+  if(note)s.progress[stepId]={completed,completedAt:cur?.completedAt||null,note};
+  else if(cur){if(completed)cur.note='';else delete s.progress[stepId];}
+  closeModal();render();
+  if(!note&&!completed){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed,completed_at:cur?.completedAt||null,note},{onConflict:'session_id,step_id'});}
+  showToast(note?'步驟備註已儲存 ✓':'步驟備註已清除');
 }
 
 /* ── 步驟拖曳排序 ─────────────────────────── */
@@ -707,9 +788,9 @@ async function importData(event){
       const existIds=new Set(appData.sessions.map(s=>s.sessionId));
       const toInsert=imp.sessions.filter(s=>!existIds.has(s.sessionId));
       for(const s of toInsert){
-        await db.from('sessions').insert({id:s.sessionId,name:s.name,live_date:s.liveDate});
+        await db.from('sessions').insert({id:s.sessionId,name:s.name,live_date:s.liveDate,note:s.note||''});
         for(const[stepId,p] of Object.entries(s.progress||{})){
-          if(p.completed)await db.from('session_progress').insert({session_id:s.sessionId,step_id:stepId,completed:true,completed_at:p.completedAt,note:p.note||''});
+          if(p.completed||p.note)await db.from('session_progress').insert({session_id:s.sessionId,step_id:stepId,completed:!!p.completed,completed_at:p.completedAt||null,note:p.note||''});
         }
       }
       await loadFromDB();render();showToast(`匯入完成，共新增 ${toInsert.length} 個場次`);
