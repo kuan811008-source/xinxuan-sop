@@ -177,6 +177,18 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .input-row{display:flex;gap:8px}
 .input-row .form-input{flex:1}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.ip-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+.ip-tab{padding:4px 11px;border-radius:16px;background:#fff;border:1px solid var(--border);
+  font-size:.75rem;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;
+  font-weight:500;color:var(--text-sub);-webkit-tap-highlight-color:transparent;user-select:none}
+.ip-tab:hover{border-color:#93c5fd}
+.ip-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.ip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ip-chip{display:inline-flex;align-items:center;font-size:.64rem;font-weight:700;
+  padding:1px 6px;border-radius:8px;white-space:nowrap;width:fit-content}
+.toast.has-undo{pointer-events:auto}
+.toast-undo{margin-left:10px;background:#fff;color:#1e293b;border:none;border-radius:5px;
+  padding:3px 12px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
 .sess-note{display:flex;gap:7px;align-items:flex-start;background:#fefce8;border:1px solid #fde047;
   border-radius:8px;padding:9px 12px;margin-bottom:16px;font-size:.84rem;line-height:1.55;
   color:#713f12;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -249,6 +261,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
     <span class="conn-badge conn-wait" id="connBadge">● 連線中</span>
     <div class="h-actions">
       <a href="gantt.html" target="_blank" class="btn btn-dark" style="text-decoration:none">📊 進度看板</a>
+      <button class="btn btn-dark" onclick="openIpManager()">📺 IP管理</button>
       <button class="btn btn-dark" onclick="exportData()">↑ 匯出</button>
       <button class="btn btn-dark" onclick="document.getElementById('importInput').click()">↓ 匯入</button>
       <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">
@@ -260,6 +273,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <aside class="sidebar">
     <div class="sidebar-hd">
       <button class="btn btn-primary btn-full" onclick="openSessionModal()">＋ 新增場次</button>
+      <div class="ip-tabs" id="ipTabs" style="display:none"></div>
     </div>
     <div class="session-list" id="sessionList"></div>
   </aside>
@@ -294,18 +308,22 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-let appData={sopTemplates:[],sessions:[]};
+let appData={sopTemplates:[],sessions:[],ips:[]};
 let selId=null,drawerOpen=false,pendingSelId=null,drawerTemplateId=null;
+let curIp='all';
+try{curIp=localStorage.getItem('xinxuan_ip')||'all';}catch(e){}
 
 async function loadFromDB(){
-  const[tplRes,grpRes,stpRes,sesRes,prRes]=await Promise.all([
+  const[tplRes,grpRes,stpRes,sesRes,prRes,ipRes]=await Promise.all([
     db.from('sop_templates').select('*').order('sort_order'),
     db.from('sop_groups').select('*').order('offset_hours'),
     db.from('sop_steps').select('*').order('sort_order'),
     db.from('sessions').select('*').order('live_date',{ascending:false}),
-    db.from('session_progress').select('*')
+    db.from('session_progress').select('*'),
+    db.from('live_ips').select('*').order('sort_order')
   ]);
   const templates=tplRes.data||[],groups=grpRes.data||[],steps=stpRes.data||[],sessions=sesRes.data||[],progress=prRes.data||[];
+  appData.ips=(ipRes.data||[]).map(i=>({ipId:i.id,name:i.name,color:i.color||'#3b82f6'}));
   appData.sopTemplates=templates.map(t=>({
     templateId:t.id,name:t.name,
     groups:groups.filter(g=>g.template_id===t.id).map(g=>({
@@ -318,7 +336,7 @@ async function loadFromDB(){
     const prog={};
     progress.filter(p=>p.session_id===s.id&&(p.completed||p.note))
       .forEach(p=>{prog[p.step_id]={completed:!!p.completed,completedAt:p.completed_at,note:p.note||''};});
-    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,note:s.note||'',progress:prog};
+    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,ipId:s.ip_id||null,note:s.note||'',progress:prog};
   });
   if(!drawerTemplateId&&appData.sopTemplates.length)drawerTemplateId=appData.sopTemplates[0].templateId;
   if(pendingSelId){selId=pendingSelId;pendingSelId=null;}
@@ -383,15 +401,85 @@ function genId(){return'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function ea(s){return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
+/* ── 直播IP ─────────────────────────────────── */
+const IP_COLORS=['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4','#ec4899','#84cc16'];
+function ipOf(session){return appData.ips.find(x=>x.ipId===session.ipId)||null;}
+function ipChip(session){
+  const ip=ipOf(session);if(!ip)return'';
+  return`<span class="ip-chip" style="background:${ip.color}22;color:${ip.color}">${esc(ip.name)}</span>`;
+}
+function filteredSessions(){
+  if(curIp==='all')return appData.sessions;
+  return appData.sessions.filter(s=>s.ipId===curIp);
+}
+function setIp(id){
+  curIp=id;
+  try{localStorage.setItem('xinxuan_ip',id);}catch(e){}
+  const list=filteredSessions();
+  if(selId&&!list.find(s=>s.sessionId===selId))selId=list.length?list[0].sessionId:null;
+  render();
+}
+function renderIpTabs(){
+  const el=document.getElementById('ipTabs');
+  if(!appData.ips.length){el.style.display='none';return;}
+  if(curIp!=='all'&&!appData.ips.find(x=>x.ipId===curIp))curIp='all';
+  el.style.display='flex';
+  el.innerHTML=`<div class="ip-tab${curIp==='all'?' active':''}" onclick="setIp('all')">全部</div>`+
+    appData.ips.map(ip=>`<div class="ip-tab${curIp===ip.ipId?' active':''}" onclick="setIp('${ip.ipId}')"><span class="ip-dot" style="background:${ip.color}"></span>${esc(ip.name)}</div>`).join('');
+}
+function openIpManager(){
+  const rows=appData.ips.map(ip=>{
+    const used=appData.sessions.filter(s=>s.ipId===ip.ipId).length;
+    return`<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #f1f5f9">
+      <span class="ip-dot" style="background:${ip.color}"></span>
+      <span style="flex:1;font-size:.88rem">${esc(ip.name)} <span style="color:var(--text-muted);font-size:.74rem">（${used} 場次）</span></span>
+      <button class="btn btn-ghost btn-xs" onclick="renameIp('${ip.ipId}')">✏ 改名</button>
+      ${used===0?`<button class="btn btn-danger btn-xs" onclick="delIp('${ip.ipId}')">✕</button>`:''}
+    </div>`;}).join('');
+  openModal(`<div class="modal-title">📺 直播IP管理</div>
+    <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:10px">每個場次屬於一個 IP，看板與列表可依 IP 切換。有場次使用中的 IP 無法刪除。</p>
+    ${rows||'<p style="font-size:.85rem;color:var(--text-muted);padding:8px 0">尚無 IP，請先新增</p>'}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <input class="form-input" id="f-ipname" placeholder="新 IP 名稱，例：微糖" style="flex:1" onkeydown="if(event.key==='Enter')addIp()">
+      <button class="btn btn-primary" onclick="addIp()">＋ 新增</button>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">關閉</button></div>`);
+}
+async function addIp(){
+  const name=document.getElementById('f-ipname').value.trim();
+  if(!name){alert('請輸入 IP 名稱');return;}
+  if(appData.ips.some(x=>x.name===name)){alert('已有同名 IP');return;}
+  const color=IP_COLORS[appData.ips.length%IP_COLORS.length];
+  const{error}=await db.from('live_ips').insert({id:genId(),name,color,sort_order:Date.now()});
+  if(error){alert('新增失敗：'+error.message+'\n\n若訊息顯示找不到 live_ips 資料表，請先在 Supabase SQL Editor 執行我提供的建表 SQL。');return;}
+  await loadFromDB();render();openIpManager();showToast('IP 已新增 ✓');
+}
+async function renameIp(id){
+  const ip=appData.ips.find(x=>x.ipId===id);if(!ip)return;
+  const name=prompt('IP 名稱',ip.name);
+  if(!name||!name.trim()||name.trim()===ip.name)return;
+  await db.from('live_ips').update({name:name.trim()}).eq('id',id);
+  await loadFromDB();render();openIpManager();
+}
+async function delIp(id){
+  if(appData.sessions.some(s=>s.ipId===id)){alert('此 IP 尚有場次使用，無法刪除');return;}
+  if(!confirm('確定刪除此 IP？'))return;
+  await db.from('live_ips').delete().eq('id',id);
+  if(curIp===id)curIp='all';
+  await loadFromDB();render();openIpManager();
+}
+
 function renderList(){
+  renderIpTabs();
   const el=document.getElementById('sessionList');
-  if(!appData.sessions.length){el.innerHTML=`<div class="session-empty">尚無場次<br>點擊上方按鈕新增</div>`;return;}
-  el.innerHTML=appData.sessions.map(s=>{
+  const list=filteredSessions();
+  if(!list.length){el.innerHTML=`<div class="session-empty">${appData.sessions.length?'此 IP 尚無場次':'尚無場次<br>點擊上方按鈕新增'}</div>`;return;}
+  el.innerHTML=list.map(s=>{
     const st=sessionStatus(s);
     const[ic,cls]={OVERDUE:['!','ic-overdue'],WARN:['~','ic-warn'],DONE:['✓','ic-done'],OK:['●','ic-normal']}[st]||['●','ic-normal'];
     return`<div class="s-card${s.sessionId===selId?' active':''}" onclick="selSession('${s.sessionId}')">
       <div class="s-icon ${cls}">${ic}</div>
-      <div class="s-info"><div class="s-name">${esc(s.name)}</div><div class="s-date">${fmtDt(s.liveDate)}</div></div>
+      <div class="s-info"><div class="s-name">${esc(s.name)}</div><div class="s-date">${fmtDt(s.liveDate)}</div>${ipChip(s)}</div>
     </div>`;
   }).join('');
 }
@@ -512,11 +600,15 @@ function openSessionModal(sid){
   const s=sid?appData.sessions.find(x=>x.sessionId===sid):null;
   const defTplId=s?.sopTemplateId||appData.sopTemplates[0]?.templateId||'';
   const tplOpts=appData.sopTemplates.map(t=>`<option value="${t.templateId}"${t.templateId===defTplId?' selected':''}>${esc(t.name)}</option>`).join('');
+  const defIpId=s?.ipId||(curIp!=='all'?curIp:appData.ips[0]?.ipId)||'';
+  const ipOpts=appData.ips.map(ip=>`<option value="${ip.ipId}"${ip.ipId===defIpId?' selected':''}>${esc(ip.name)}</option>`).join('');
   openModal(`<div class="modal-title">${s?'編輯場次':'新增直播場次'}</div>
     <div class="form-group"><label class="form-label">場次名稱 *</label>
       <input class="form-input" id="f-name" placeholder="例：2026-04-15 春季直播" value="${s?ea(s.name):''}"></div>
     <div class="form-group"><label class="form-label">直播日期時間 *</label>
       <input class="form-input" type="datetime-local" id="f-date" value="${s?dtLocal(s.liveDate):''}"></div>
+    <div class="form-group"><label class="form-label">直播 IP *</label>
+      <select class="form-input" id="f-ip">${ipOpts||'<option value="">（尚無 IP，請先到「📺 IP管理」新增）</option>'}</select></div>
     <div class="form-group"><label class="form-label">使用 SOP *</label>
       <select class="form-input" id="f-tpl">${tplOpts||'<option value="">（尚無 SOP 模板）</option>'}</select></div>
     <div class="form-group"><label class="form-label">備註（可留空）</label>
@@ -531,12 +623,14 @@ async function saveSession(sid){
   const name=document.getElementById('f-name').value.trim(),dv=document.getElementById('f-date').value;
   const tplId=document.getElementById('f-tpl')?.value||appData.sopTemplates[0]?.templateId||null;
   const note=document.getElementById('f-note')?.value.trim()||'';
+  const ipId=document.getElementById('f-ip')?.value||null;
   if(!name){alert('請輸入場次名稱');return;}if(!dv){alert('請選擇直播日期時間');return;}
+  if(appData.ips.length&&!ipId){alert('請選擇直播 IP');return;}
   setBtnLoading('saveBtn',true);
   const liveDate=new Date(dv).toISOString();
   let error;
-  if(sid){({error}=await db.from('sessions').update({name,live_date:liveDate,sop_template_id:tplId,note}).eq('id',sid));}
-  else{const id=genId();pendingSelId=id;({error}=await db.from('sessions').insert({id,name,live_date:liveDate,sop_template_id:tplId,note}));}
+  if(sid){({error}=await db.from('sessions').update({name,live_date:liveDate,sop_template_id:tplId,note,ip_id:ipId}).eq('id',sid));}
+  else{const id=genId();pendingSelId=id;({error}=await db.from('sessions').insert({id,name,live_date:liveDate,sop_template_id:tplId,note,ip_id:ipId}));}
   if(error){setBtnLoading('saveBtn',false);alert('儲存失敗：'+error.message+'\n\n若訊息顯示找不到 note 欄位，請先在 Supabase SQL Editor 執行：\nalter table sessions add column if not exists note text;');return;}
   closeModal();await loadFromDB();render();
 }
@@ -552,19 +646,51 @@ async function delSession(sid){
   if(selId===sid)selId=null;closeModal();await loadFromDB();render();
 }
 
+function findStepNameAny(stepId){
+  for(const t of appData.sopTemplates)for(const g of t.groups){
+    const st=g.steps.find(x=>x.stepId===stepId);if(st)return st.name;
+  }
+  return'';
+}
 async function toggleStep(sessionId,stepId){
   const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
   const cur=session.progress[stepId];
-  const isDone=cur?.completed;
+  if(cur?.completed){
+    openModal(`<div class="modal-title" style="color:#ef4444">⚠ 取消完成</div>
+      <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:10px">${esc(session.name)} — ${esc(findStepNameAny(stepId))}</div>
+      <p style="font-size:.85rem;color:#475569;margin-bottom:16px;line-height:1.6">此步驟已標記完成，確定要改回「未完成」嗎？<br>這會影響所有人看到的進度。</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal()">先不要</button>
+        <button class="btn btn-danger" onclick="closeModal();applyToggle('${sessionId}','${stepId}',false)">確定取消完成</button>
+      </div>`);
+    return;
+  }
+  await applyToggle(sessionId,stepId,true);
+}
+async function applyToggle(sessionId,stepId,toDone){
+  const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
+  const cur=session.progress[stepId];
   const note=cur?.note||'';
-  if(isDone){
+  const prev=cur?{...cur}:null;
+  if(toDone)session.progress[stepId]={completed:true,completedAt:new Date().toISOString(),note};
+  else{
     if(note)session.progress[stepId]={completed:false,completedAt:null,note};
     else delete session.progress[stepId];
-  }else session.progress[stepId]={completed:true,completedAt:new Date().toISOString(),note};
+  }
   render();
-  if(isDone&&!note){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
-  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:!isDone,completed_at:isDone?null:new Date().toISOString(),note},{onConflict:'session_id,step_id'});}
-  showToast(isDone?'已取消完成':'已標記完成 ✓');
+  if(!toDone&&!note){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:toDone,completed_at:toDone?session.progress[stepId].completedAt:null,note},{onConflict:'session_id,step_id'});}
+  if(toDone)showToast('已標記完成 ✓',()=>undoComplete(sessionId,stepId,prev));
+  else showToast('已取消完成');
+}
+async function undoComplete(sessionId,stepId,prev){
+  const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
+  if(prev)session.progress[stepId]={...prev};else delete session.progress[stepId];
+  render();
+  const note=prev?.note||'';
+  if(!prev||(!prev.completed&&!note)){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:!!prev.completed,completed_at:prev.completedAt||null,note},{onConflict:'session_id,step_id'});}
+  showToast('已復原');
 }
 
 /* ── 備註編輯 ─────────────────────────────── */
@@ -790,7 +916,7 @@ async function importData(event){
       const existIds=new Set(appData.sessions.map(s=>s.sessionId));
       const toInsert=imp.sessions.filter(s=>!existIds.has(s.sessionId));
       for(const s of toInsert){
-        await db.from('sessions').insert({id:s.sessionId,name:s.name,live_date:s.liveDate,note:s.note||''});
+        await db.from('sessions').insert({id:s.sessionId,name:s.name,live_date:s.liveDate,note:s.note||'',ip_id:s.ipId||null});
         for(const[stepId,p] of Object.entries(s.progress||{})){
           if(p.completed||p.note)await db.from('session_progress').insert({session_id:s.sessionId,step_id:stepId,completed:!!p.completed,completed_at:p.completedAt||null,note:p.note||''});
         }
@@ -807,8 +933,20 @@ function closeModal(){document.getElementById('modalBg').classList.remove('open'
 document.getElementById('modalBg').addEventListener('click',function(e){if(e.target===this)closeModal();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();if(drawerOpen)closeDrawer();}});
 function setBtnLoading(id,on){const btn=document.getElementById(id);if(btn){btn.disabled=on;btn.textContent=on?'處理中...':'儲存';}}
-let toastTimer;
-function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2200);}
+let toastTimer,toastUndo=null;
+function showToast(msg,undo){
+  const el=document.getElementById('toast');
+  toastUndo=undo||null;
+  el.innerHTML=esc(msg)+(undo?'<button class="toast-undo" onclick="runToastUndo()">復原</button>':'');
+  el.classList.toggle('has-undo',!!undo);
+  el.classList.add('show');clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');toastUndo=null;},undo?5000:2200);
+}
+function runToastUndo(){
+  const f=toastUndo;toastUndo=null;
+  const el=document.getElementById('toast');el.classList.remove('show');
+  if(f)f();
+}
 function hideLoading(){const el=document.getElementById('loadingOverlay');if(el){el.style.opacity='0';el.style.transition='opacity .4s';setTimeout(()=>el.remove(),400);}}
 
 (async()=>{
