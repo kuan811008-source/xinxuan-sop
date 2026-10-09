@@ -147,6 +147,17 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .t-wn{background:#f59e0b;color:#fff}
 .t-dn{background:#22c55e;color:#fff}
 
+/* IP tabs */
+.ip-tabs{display:flex;gap:6px;padding:12px 16px 0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.ip-tab{padding:6px 14px;border-radius:20px;background:#fff;border:1px solid var(--border);
+  font-size:.8rem;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;
+  font-weight:500;color:var(--text-sub);-webkit-tap-highlight-color:transparent;flex-shrink:0;user-select:none}
+.ip-tab:hover{border-color:#93c5fd}
+.ip-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.ip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ip-chip{display:inline-flex;align-items:center;gap:4px;font-size:.66rem;font-weight:700;
+  padding:1px 7px;border-radius:9px;white-space:nowrap;width:fit-content}
+
 /* Notes */
 .sess-note{display:flex;gap:7px;align-items:flex-start;background:#fefce8;border:1px solid #fde047;
   border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.82rem;line-height:1.55;
@@ -189,6 +200,9 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   background:#1e293b;color:#fff;padding:10px 20px;border-radius:8px;font-size:.85rem;
   z-index:500;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
+.toast.has-undo{pointer-events:auto}
+.toast-undo{margin-left:10px;background:#fff;color:#1e293b;border:none;border-radius:5px;
+  padding:3px 12px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
 
 /* Legend */
 .legend{display:flex;gap:12px;padding:12px 16px;flex-wrap:wrap;
@@ -250,6 +264,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   </div>
 </header>
 
+<div class="ip-tabs" id="ipTabs" style="display:none"></div>
 <div class="board-wrap">
   <div class="empty-state" id="emptyState" style="display:none">
     <div class="icon">🎉</div>
@@ -267,8 +282,10 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-let appData={sopTemplates:[],sessions:[]};
+let appData={sopTemplates:[],sessions:[],ips:[]};
 let expandedIds=new Set();
+let curIp='all';
+try{curIp=localStorage.getItem('xinxuan_ip')||'all';}catch(e){}
 let mobileExpandedIds=new Set();
 const DAY_MS=86400000;
 const WD=['日','一','二','三','四','五','六'];
@@ -276,20 +293,26 @@ const WD=['日','一','二','三','四','五','六'];
 /* ── abbrev group names ─────────────────────── */
 function abbr(name){
   const map={'叫貨準備作業':'叫貨','廠商出貨確認':'廠商','商品品質確認（QC）':'QC',
-    '台灣出貨準備':'台灣準備','台灣收貨確認':'收貨','台灣包裝場清點':'清點','出貨至客戶':'出貨'};
+    '台灣出貨準備':'台灣準備','台灣收貨確認':'收貨','台灣包裝場清點':'清點','出貨至客戶':'出貨',
+    '主播叫貨':'叫貨','付款':'付款','廠商備貨與出貨（第1批）':'備貨1','QC質檢與出貨（第1批）':'QC1',
+    '裝箱規範（第1批）':'裝箱1','物流至中轉倉（第1批）':'物流1','雲倉作業（第1批）':'雲倉1',
+    '廠商回覆與補貨出貨（第2批）':'補貨2','QC質檢與出貨（第2批）':'QC2','裝箱規範（第2批）':'裝箱2',
+    '物流至中轉倉（第2批）':'物流2','雲倉作業（第2批）':'雲倉2'};
   return map[name]||(name.length>4?name.slice(0,4)+'…':name);
 }
 
 /* ── data loading ───────────────────────────── */
 async function loadData(){
-  const[tplR,grpR,stpR,sesR,prR]=await Promise.all([
+  const[tplR,grpR,stpR,sesR,prR,ipR]=await Promise.all([
     db.from('sop_templates').select('*').order('sort_order'),
     db.from('sop_groups').select('*').order('offset_hours'),
     db.from('sop_steps').select('*').order('sort_order'),
     db.from('sessions').select('*').order('live_date',{ascending:true}),
-    db.from('session_progress').select('*')
+    db.from('session_progress').select('*'),
+    db.from('live_ips').select('*').order('sort_order')
   ]);
   const templates=tplR.data||[],groups=grpR.data||[],steps=stpR.data||[],sessions=sesR.data||[],progress=prR.data||[];
+  appData.ips=(ipR.data||[]).map(i=>({ipId:i.id,name:i.name,color:i.color||'#3b82f6'}));
   appData.sopTemplates=templates.map(t=>({
     templateId:t.id,name:t.name,
     groups:groups.filter(g=>g.template_id===t.id).map(g=>({
@@ -303,7 +326,7 @@ async function loadData(){
     const prog={};
     progress.filter(p=>p.session_id===s.id&&(p.completed||p.note))
       .forEach(p=>{prog[p.step_id]={completed:!!p.completed,completedAt:p.completed_at,note:p.note||''};});
-    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,note:s.note||'',progress:prog};
+    return{sessionId:s.id,name:s.name,liveDate:s.live_date,sopTemplateId:s.sop_template_id,ipId:s.ip_id||null,note:s.note||'',progress:prog};
   });
   const p=n=>String(n).padStart(2,'0');
   const now=new Date();
@@ -315,6 +338,45 @@ function getSessionTemplate(session){
 }
 function getSessionGroups(session){
   return [...(getSessionTemplate(session).groups||[])].sort((a,b)=>a.offsetHours-b.offsetHours);
+}
+
+/* ── IP 分頁 ────────────────────────────────── */
+function resolveIpParam(){
+  try{
+    const n=new URLSearchParams(location.search).get('ip');
+    if(!n)return;
+    const ip=appData.ips.find(x=>x.name===n);
+    if(ip)curIp=ip.ipId;
+  }catch(e){}
+}
+function setIp(id){
+  curIp=id;
+  try{
+    localStorage.setItem('xinxuan_ip',id);
+    const ip=appData.ips.find(x=>x.ipId===id);
+    const u=new URL(location.href);
+    if(id==='all')u.searchParams.delete('ip');else if(ip)u.searchParams.set('ip',ip.name);
+    history.replaceState(null,'',u);
+  }catch(e){}
+  render();
+}
+function renderIpTabs(){
+  const el=document.getElementById('ipTabs');
+  if(!appData.ips.length){el.style.display='none';return;}
+  if(curIp!=='all'&&!appData.ips.find(x=>x.ipId===curIp))curIp='all';
+  el.style.display='flex';
+  el.innerHTML=`<div class="ip-tab${curIp==='all'?' active':''}" onclick="setIp('all')">全部</div>`+
+    appData.ips.map(ip=>`<div class="ip-tab${curIp===ip.ipId?' active':''}" onclick="setIp('${ip.ipId}')"><span class="ip-dot" style="background:${ip.color}"></span>${esc(ip.name)}</div>`).join('');
+}
+function ipOf(session){return appData.ips.find(x=>x.ipId===session.ipId)||null;}
+function ipChip(session){
+  const ip=ipOf(session);if(!ip)return'';
+  return`<span class="ip-chip" style="background:${ip.color}22;color:${ip.color}">${esc(ip.name)}</span>`;
+}
+function activeSessions(){
+  let a=appData.sessions.filter(s=>!isSessionDone(s));
+  if(curIp!=='all')a=a.filter(s=>s.ipId===curIp);
+  return a;
 }
 
 /* ── status helpers ─────────────────────────── */
@@ -419,7 +481,7 @@ function renderMobileCards(active){
     return`<div class="mc${isOpen?' mc-open':''}">
       <div class="mc-hd" onclick="toggleMobileCard('${session.sessionId}')">
         <div class="mc-top">
-          <div class="mc-name">${esc(session.name)}</div>
+          <div class="mc-name">${esc(session.name)}${ipOf(session)?' ':''}${ipChip(session)}</div>
           <span class="rl-day ${dayCls}" style="font-size:.72rem;flex-shrink:0">${dl.text}</span>
         </div>
         <div style="font-size:.73rem;color:var(--text-muted);margin-bottom:9px">📅 ${fmtDt(session.liveDate)}</div>
@@ -439,12 +501,13 @@ function renderMobileCards(active){
 function toggleMobileCard(sid){
   if(mobileExpandedIds.has(sid))mobileExpandedIds.delete(sid);
   else mobileExpandedIds.add(sid);
-  renderMobileCards(appData.sessions.filter(s=>!isSessionDone(s)));
+  renderMobileCards(activeSessions());
 }
 
 /* ── main render ────────────────────────────── */
 function render(){
-  const active=appData.sessions.filter(s=>!isSessionDone(s));
+  renderIpTabs();
+  const active=activeSessions();
   const board=document.getElementById('board');
   const mCards=document.getElementById('mobileCards');
   const empty=document.getElementById('emptyState');
@@ -515,6 +578,7 @@ function render(){
     rows+=`<div class="gantt-row${isExp?' expanded':''}" onclick="toggleExpand('${session.sessionId}')">
       <div class="row-label">
         <div class="rl-name">${esc(session.name)}</div>
+        ${ipChip(session)}
         <div class="rl-date">📅 ${fmtMD(new Date(session.liveDate))}</div>
         ${session.note?`<div class="rl-note" title="${escA(session.note)}">📝 ${esc(session.note)}</div>`:''}
         <span class="rl-day ${dayCls}">${dl.text}</span>
@@ -598,17 +662,43 @@ async function toggleStep(ev,sessionId,stepId){
   ev.stopPropagation();
   const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
   const cur=session.progress[stepId];
-  const isDone=cur?.completed;
+  if(cur?.completed){
+    openModal(`<div class="modal-title">⚠ 取消完成</div>
+      <div class="modal-sub">${esc(session.name)} — ${esc(findStepName(stepId))}</div>
+      <p style="font-size:.85rem;color:#475569;line-height:1.6">此步驟已標記完成，確定要改回「未完成」嗎？<br>這會影響所有人看到的進度。</p>
+      <div class="modal-actions">
+        <button class="m-btn m-btn-ghost" onclick="closeModal()">先不要</button>
+        <button class="m-btn m-btn-primary" style="background:#ef4444" onclick="closeModal();applyToggle('${sessionId}','${stepId}',false)">確定取消完成</button>
+      </div>`);
+    return;
+  }
+  await applyToggle(sessionId,stepId,true);
+}
+async function applyToggle(sessionId,stepId,toDone){
+  const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
+  const cur=session.progress[stepId];
   const note=cur?.note||'';
-  if(isDone){
+  const prev=cur?{...cur}:null;
+  if(toDone)session.progress[stepId]={completed:true,completedAt:new Date().toISOString(),note};
+  else{
     if(note)session.progress[stepId]={completed:false,completedAt:null,note};
     else delete session.progress[stepId];
-  }else session.progress[stepId]={completed:true,completedAt:new Date().toISOString(),note};
-  const allDone=!isDone&&isSessionDone(session);
+  }
+  const allDone=toDone&&isSessionDone(session);
   render();
-  if(isDone&&!note){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
-  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:!isDone,completed_at:isDone?null:new Date().toISOString(),note},{onConflict:'session_id,step_id'});}
-  showToast(isDone?'已取消完成':allDone?'🎉 此場次全部完成，已自看板結案':'已標記完成 ✓');
+  if(!toDone&&!note){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:toDone,completed_at:toDone?session.progress[stepId].completedAt:null,note},{onConflict:'session_id,step_id'});}
+  if(toDone)showToast(allDone?'🎉 此場次全部完成，已自看板結案':'已標記完成 ✓',()=>undoComplete(sessionId,stepId,prev));
+  else showToast('已取消完成');
+}
+async function undoComplete(sessionId,stepId,prev){
+  const session=appData.sessions.find(s=>s.sessionId===sessionId);if(!session)return;
+  if(prev)session.progress[stepId]={...prev};else delete session.progress[stepId];
+  render();
+  const note=prev?.note||'';
+  if(!prev||(!prev.completed&&!note)){await db.from('session_progress').delete().eq('session_id',sessionId).eq('step_id',stepId);}
+  else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed:!!prev.completed,completed_at:prev.completedAt||null,note},{onConflict:'session_id,step_id'});}
+  showToast('已復原');
 }
 
 /* ── 備註編輯 ─────────────────────────────── */
@@ -665,8 +755,20 @@ async function saveStepNote(sessionId,stepId){
   else{await db.from('session_progress').upsert({session_id:sessionId,step_id:stepId,completed,completed_at:cur?.completedAt||null,note},{onConflict:'session_id,step_id'});}
   showToast(note?'步驟備註已儲存 ✓':'步驟備註已清除');
 }
-let toastTimer;
-function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2200);}
+let toastTimer,toastUndo=null;
+function showToast(msg,undo){
+  const el=document.getElementById('toast');
+  toastUndo=undo||null;
+  el.innerHTML=esc(msg)+(undo?'<button class="toast-undo" onclick="runToastUndo()">復原</button>':'');
+  el.classList.toggle('has-undo',!!undo);
+  el.classList.add('show');clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');toastUndo=null;},undo?5000:2200);
+}
+function runToastUndo(){
+  const f=toastUndo;toastUndo=null;
+  const el=document.getElementById('toast');el.classList.remove('show');
+  if(f)f();
+}
 
 function toggleExpand(sid){
   if(expandedIds.has(sid))expandedIds.delete(sid);
@@ -702,6 +804,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 
 (async()=>{
   await loadData();
+  resolveIpParam();
   hideLoading();
   render();
   setupRealtime();
