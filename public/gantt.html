@@ -222,6 +222,29 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .toast-undo{margin-left:10px;background:#fff;color:#1e293b;border:none;border-radius:5px;
   padding:3px 12px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
 
+/* 階段膠囊與狀態 */
+.stage-pills{display:flex;flex-wrap:wrap;gap:5px}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:.74rem;font-weight:600;
+  padding:4px 10px;border-radius:14px;border:1.5px solid transparent;white-space:nowrap;line-height:1.3}
+.pl-done{background:#dcfce7;border-color:#86efac;color:#15803d}
+.pl-ov{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
+.pl-wn{background:#fef3c7;border-color:#fcd34d;color:#b45309}
+.pl-cur{background:#dbeafe;border-color:#60a5fa;color:#1d4ed8}
+.pl-fut{background:#f1f5f9;border-color:#e2e8f0;color:#94a3b8}
+.pill.cur{border-width:2px;font-weight:800}
+.st-badge{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:12px;white-space:nowrap}
+.st-ov{background:#fee2e2;color:#b91c1c}
+.st-wn{background:#fef3c7;color:#b45309}
+.st-ok{background:#dcfce7;color:#15803d}
+.next-dl{display:flex;align-items:center;gap:6px;font-size:.8rem;margin:10px 0;
+  padding:8px 11px;border-radius:7px;line-height:1.45}
+.ndl-ov{background:#fef2f2;color:#b91c1c;font-weight:700;border:1px solid #fecaca}
+.ndl-wn{background:#fffbeb;color:#b45309;font-weight:700;border:1px solid #fde68a}
+.ndl-ok{background:#f8fafc;color:#475569;border:1px solid #e2e8f0}
+.ndl-done{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+.legend2{display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px 0;max-width:1280px;
+  margin:0 auto;font-size:.74rem;color:var(--text-sub);align-items:center;width:100%}
+
 /* Legend */
 .legend{display:flex;gap:12px;padding:12px 16px;flex-wrap:wrap;
   border-top:1px solid var(--border);background:#f8fafc;border-radius:0 0 10px 10px;
@@ -230,15 +253,18 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
 
 /* ===== Mobile card view ===== */
-.mobile-cards{display:none;flex-direction:column;gap:10px}
+.mobile-cards{display:none;grid-template-columns:1fr;gap:12px;max-width:1280px;margin:0 auto}
+@media(min-width:1024px){.mobile-cards{grid-template-columns:1fr 1fr;align-items:start}}
 .mc{background:#fff;border-radius:10px;border:1px solid var(--border);
   box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}
 .mc-hd{padding:14px 14px 12px;-webkit-tap-highlight-color:transparent;user-select:none;cursor:pointer}
 .mc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
-.mc-name{font-size:.95rem;font-weight:700;flex:1;line-height:1.35}
-.mc-pbar{background:#e2e8f0;border-radius:4px;height:6px;margin-bottom:7px}
+.mc-name{font-size:1rem;font-weight:700;flex:1;line-height:1.4}
+.mc-pbar{background:#e2e8f0;border-radius:4px;height:9px;margin-bottom:6px}
 .mc-pbar-fill{height:100%;border-radius:4px;background:#22c55e;transition:width .4s}
-.mc-pct{font-size:.72rem;color:var(--text-sub);font-weight:500;margin-bottom:10px}
+.mc-pbar-fill.pb-warn{background:#f59e0b}
+.mc-pct{font-size:.8rem;color:var(--text-sub);font-weight:500}
+.mc-pct b{font-size:.92rem;color:var(--text)}
 .mc-phases{display:flex;flex-wrap:wrap;gap:4px}
 .mc-ph{flex:1 0 18%;min-width:60px;max-width:100%;height:28px;border-radius:5px;
   display:flex;align-items:center;justify-content:center;font-size:.64rem;font-weight:700;
@@ -285,6 +311,14 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 </header>
 
 <div class="ip-tabs" id="ipTabs" style="display:none"></div>
+<div class="legend2">圖例：
+  <span class="pill pl-done">✓ 完成</span>
+  <span class="pill pl-ov">⚠ 逾期</span>
+  <span class="pill pl-wn">⏰ 即將截止</span>
+  <span class="pill pl-cur">▶ 進行中</span>
+  <span class="pill pl-fut">未開始</span>
+  <span style="margin-left:auto">💬＝該階段有步驟備註 · 卡片依「最急截止」排序</span>
+</div>
 <div class="board-wrap">
   <div class="empty-state" id="emptyState" style="display:none">
     <div class="icon">🎉</div>
@@ -472,186 +506,101 @@ function barClass(group,session,phaseStartTs,phaseEndTs){
 }
 
 /* ── mobile card render ─────────────────────── */
-function renderMobileCards(active){
-  const mCards=document.getElementById('mobileCards');
-  mCards.style.display='flex';
-  const colMap={
-    'bc-done':'background:#bbf7d0;border-color:#4ade80;color:#166534',
-    'bc-overdue':'background:#fca5a5;border-color:#f87171;color:#991b1b',
-    'bc-warn':'background:#fde68a;border-color:#fbbf24;color:#854d0e',
-    'bc-normal':'background:#bfdbfe;border-color:#93c5fd;color:#1e40af',
-    'bc-future':'background:#e2e8f0;border-color:#cbd5e1;color:#94a3b8'
-  };
-  mCards.innerHTML=active.map(session=>{
+
+/* ── 階段狀態卡片 ───────────────────────────── */
+function nextPending(session){
+  const groups=getSessionGroups(session).filter(g=>g.steps.length);
+  for(const g of groups){
+    if(!g.steps.every(st=>session.progress[st.stepId]?.completed)){
+      return{g,deadline:new Date(session.liveDate).getTime()+g.offsetHours*3600000};
+    }
+  }
+  return null;
+}
+function urgency(session){
+  const np=nextPending(session);
+  return np?np.deadline:Infinity;
+}
+function renderCards(active){
+  const wrap=document.getElementById('mobileCards');
+  wrap.style.display='grid';
+  wrap.innerHTML=active.map(session=>{
     const sortedGroups=getSessionGroups(session);
-    const liveTs=new Date(session.liveDate).getTime();
     const dl=dayLabel(session.liveDate);
-    const hasOv=sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='OVERDUE'));
-    const hasWn=!hasOv&&sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='WARN'));
-    const dayCls=hasOv?'d-overdue':hasWn?'d-warn':dl.cls;
-    let total=0,done=0;
-    for(const g of sortedGroups)for(const st of g.steps){total++;if(session.progress[st.stepId]?.completed)done++;}
+    let total=0,done=0,ovSteps=0,wnSteps=0;
+    for(const g of sortedGroups)for(const st of g.steps){
+      total++;
+      const r=stepStatus(st.stepId,g,session);
+      if(r.s==='DONE')done++;else if(r.s==='OVERDUE')ovSteps++;else if(r.s==='WARN')wnSteps++;
+    }
     const pct=total?Math.round(done/total*100):0;
-    const phases=sortedGroups.map((g,i)=>{
-      const prev=i>0?sortedGroups[i-1].offsetHours:0;
-      const cls=barClass(g,session,liveTs+prev*3600000,liveTs+g.offsetHours*3600000);
-      return`<div class="mc-ph" style="${colMap[cls]||colMap['bc-future']}" title="${esc(g.groupName)}">${abbr(g.groupName)}</div>`;
+    const dayCls=ovSteps?'d-overdue':wnSteps?'d-warn':dl.cls;
+    const stBadge=ovSteps?`<span class="st-badge st-ov">⚠ ${ovSteps} 項逾期</span>`
+      :wnSteps?`<span class="st-badge st-wn">⏰ ${wnSteps} 項即將截止</span>`
+      :`<span class="st-badge st-ok">✓ 進度正常</span>`;
+    const np=nextPending(session);
+    let ndl;
+    if(np){
+      const diff=np.deadline-Date.now();
+      const when=fmtShort(new Date(np.deadline).toISOString());
+      if(diff<0)ndl=`<div class="next-dl ndl-ov">🔥 目前卡在「${esc(np.g.groupName)}」— 已逾期 ${fmtDur(-diff/3600000)}（截止 ${when}）</div>`;
+      else if(diff<4*3600000)ndl=`<div class="next-dl ndl-wn">⏰ 下個截止：「${esc(np.g.groupName)}」${fmtDur(diff/3600000)} 後（${when}）</div>`;
+      else ndl=`<div class="next-dl ndl-ok">📍 目前階段：「${esc(np.g.groupName)}」 · 截止 ${when}</div>`;
+    }else ndl=`<div class="next-dl ndl-done">🎉 所有步驟已完成</div>`;
+    const curId=np?.g.groupId;
+    const pills=sortedGroups.map(g=>{
+      const gs=groupStatus(g,session);
+      let gd=0;for(const st of g.steps)if(session.progress[st.stepId]?.completed)gd++;
+      const gt=g.steps.length;
+      const hasN=g.steps.some(st=>session.progress[st.stepId]?.note);
+      const cls={DONE:'pl-done',OVERDUE:'pl-ov',WARN:'pl-wn',OK:'pl-cur',FUTURE:'pl-fut'}[gs]||'pl-fut';
+      const icon={DONE:'✓',OVERDUE:'⚠',WARN:'⏰'}[gs]||(g.groupId===curId?'▶':'');
+      return`<span class="pill ${cls}${g.groupId===curId?' cur':''}" title="${escA(g.groupName)}：${gd}/${gt} 完成">${icon?icon+' ':''}${esc(g.groupName)}${gt?` ${gd}/${gt}`:''}${hasN?' 💬':''}</span>`;
     }).join('');
-    const isOpen=mobileExpandedIds.has(session.sessionId);
+    const isOpen=expandedIds.has(session.sessionId);
     return`<div class="mc${isOpen?' mc-open':''}">
-      <div class="mc-hd" onclick="toggleMobileCard('${session.sessionId}')">
+      <div class="mc-hd" onclick="toggleCard('${session.sessionId}')">
         <div class="mc-top">
-          <div class="mc-name">${esc(session.name)}${ipOf(session)?' ':''}${ipChip(session)}</div>
-          <span class="rl-day ${dayCls}" style="font-size:.72rem;flex-shrink:0">${dl.text}</span>
+          <div class="mc-name">${esc(session.name)} ${ipChip(session)}</div>
+          <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+            ${stBadge}<span class="rl-day ${dayCls}" style="margin-top:0">${dl.text}</span>
+          </div>
         </div>
-        <div style="font-size:.73rem;color:var(--text-muted);margin-bottom:9px">📅 ${fmtDt(session.liveDate)}</div>
-        ${session.note?`<div class="mc-note"><div class="mc-note-txt">📝 ${esc(session.note)}</div></div>`:''}
-        <div class="mc-pbar"><div class="mc-pbar-fill" style="width:${pct}%"></div></div>
-        <div class="mc-pct">${done} / ${total} 步驟完成（${pct}%）</div>
-        <div class="mc-phases">${phases}</div>
+        <div style="font-size:.74rem;color:var(--text-muted);margin-bottom:9px">📅 直播日 ${fmtDt(session.liveDate)}</div>
+        ${session.note
+          ?`<div class="mc-note" onclick="openSessionNote(event,'${session.sessionId}')" title="點擊編輯備註" style="cursor:pointer"><div class="mc-note-txt">📝 ${esc(session.note)}</div></div>`
+          :''}
+        <div class="mc-pbar"><div class="mc-pbar-fill${ovSteps?' pb-warn':''}" style="width:${pct}%"></div></div>
+        <div class="mc-pct"><b>${done} / ${total}</b> 步驟完成（${pct}%）</div>
+        ${ndl}
+        <div class="stage-pills">${pills}</div>
       </div>
-      <div class="mc-toggle" onclick="toggleMobileCard('${session.sessionId}')">
-        <span>${isOpen?'▲ 收起步驟':'▼ 展開步驟詳情'}</span>
+      <div class="mc-toggle" onclick="toggleCard('${session.sessionId}')">
+        <span>${isOpen?'▲ 收起步驟詳情':'▼ 展開步驟詳情（勾選與備註在這裡）'}</span>
         <span class="mc-chevron">▼</span>
       </div>
-      ${isOpen?`<div class="mc-body">${renderExpand(session,getSessionGroups(session))}</div>`:''}
+      ${isOpen?`<div class="mc-body">${renderExpand(session,sortedGroups)}</div>`:''}
     </div>`;
   }).join('');
 }
-function toggleMobileCard(sid){
-  if(mobileExpandedIds.has(sid))mobileExpandedIds.delete(sid);
-  else mobileExpandedIds.add(sid);
-  renderMobileCards(activeSessions());
+function toggleCard(sid){
+  if(expandedIds.has(sid))expandedIds.delete(sid);
+  else expandedIds.add(sid);
+  render();
 }
+function toggleMobileCard(sid){toggleCard(sid);}
 
 /* ── main render ────────────────────────────── */
-let firstBoardRender=true;
 function render(){
   renderIpTabs();
-  const active=activeSessions();
+  const active=activeSessions().sort((a,b)=>urgency(a)-urgency(b));
   const board=document.getElementById('board');
-  const mCards=document.getElementById('mobileCards');
+  const wrap=document.getElementById('mobileCards');
   const empty=document.getElementById('emptyState');
-  if(!active.length){board.style.display='none';mCards.style.display='none';empty.style.display='flex';return;}
+  if(board)board.style.display='none';
+  if(!active.length){wrap.style.display='none';empty.style.display='flex';return;}
   empty.style.display='none';
-  if(window.innerWidth<=640){board.style.display='none';renderMobileCards(active);return;}
-  mCards.style.display='none';
-  board.style.display='block';
-
-  /* X-axis：聚焦視窗（今天前7天～後21天），過舊/過新的階段以提示章呈現 */
-  const todayMs=Math.floor(Date.now()/DAY_MS)*DAY_MS;
-  const xMin=todayMs-7*DAY_MS;
-  const xMax=todayMs+22*DAY_MS;
-  const totalDays=Math.round((xMax-xMin)/DAY_MS);
-  const DAY_PX=window.innerWidth<=640?36:48;
-  const totalW=totalDays*DAY_PX;
-
-  function toX(ts){return(ts-xMin)/DAY_MS*DAY_PX;}
-  const todayX=toX(Date.now());
-  const todayBandX=toX(todayMs);
-
-  /* ── date header ── */
-  let ticks='';
-  for(let i=0;i<totalDays;i++){
-    const d=new Date(xMin+i*DAY_MS);
-    const x=i*DAY_PX;
-    const wd=d.getDay();
-    const isToday=fmtMD(d)===fmtMD(new Date());
-    const isWknd=wd===0||wd===6;
-    ticks+=`<div class="date-tick${isToday?' is-today':isWknd?' is-weekend':''}" style="left:${x}px;width:${DAY_PX}px">
-      <span class="dt-day">${fmtMD(d)}</span><span class="dt-wd">${WD[wd]}</span>
-    </div>`;
-  }
-
-  /* ── session rows ── */
-  let rows='';
-  for(const session of active){
-    const sortedGroups=getSessionGroups(session);
-    const liveTs=new Date(session.liveDate).getTime();
-    const dl=dayLabel(session.liveDate);
-    const hasOv=sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='OVERDUE'));
-    const hasWn=!hasOv&&sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='WARN'));
-    const dayCls=hasOv?'d-overdue':hasWn?'d-warn':dl.cls;
-
-    /* bars（裁切至視窗內，附進度與 tooltip） */
-    let barsHtml=`<div class="today-band" style="left:${todayBandX}px;width:${DAY_PX}px"></div>`;
-    let anyVisible=false,lastEnd=0,firstStart=Infinity;
-    for(let i=0;i<sortedGroups.length;i++){
-      const g=sortedGroups[i];
-      const prevOffset=i>0?sortedGroups[i-1].offsetHours:0;
-      const barStart=liveTs+prevOffset*3600000;
-      const barEnd=liveTs+g.offsetHours*3600000;
-      lastEnd=Math.max(lastEnd,barEnd);firstStart=Math.min(firstStart,barStart);
-      let bx=toX(barStart),bex=toX(barEnd);
-      if(bex<=0||bx>=totalW)continue;
-      const clipL=bx<0,clipR=bex>totalW;
-      bx=Math.max(0,bx);bex=Math.min(totalW,bex);
-      const bw=Math.max(4,bex-bx-1);
-      anyVisible=true;
-      const cls=barClass(g,session,barStart,barEnd);
-      let done=0;for(const st of g.steps)if(session.progress[st.stepId]?.completed)done++;
-      const total=g.steps.length;
-      const prog=total?(done===total?'✓':`${done}/${total}`):'';
-      const tip=`${g.groupName}\n截止：${fmtDt(new Date(liveTs+g.offsetHours*3600000).toISOString())}\n進度：${done}/${total} 步驟完成`;
-      barsHtml+=`<div class="phase-bar ${cls}${clipL?' clip-l':''}${clipR?' clip-r':''}" style="left:${bx}px;width:${bw}px" title="${escA(tip)}">
-        <span class="bar-lbl">${clipL?'‹ ':''}${abbr(g.groupName)}${prog?` ${prog}`:''}${clipR?' ›':''}</span>
-      </div>`;
-    }
-    if(!anyVisible){
-      if(lastEnd&&lastEnd<xMin){
-        const dOver=Math.round((todayMs-lastEnd)/DAY_MS);
-        barsHtml+=`<div class="ov-chip" style="left:${todayX+12}px">⚠ 全部階段已超過 ${dOver} 天，點擊展開查看</div>`;
-      }else if(firstStart>xMax){
-        barsHtml+=`<div class="fut-chip" style="left:${todayX+12}px">尚未開始 · ${fmtMD(new Date(liveTs))} 直播 →</div>`;
-      }
-    }
-    barsHtml+=`<div class="today-line" style="left:${todayX}px"></div>`;
-
-    let sTotal=0,sDone=0;
-    for(const g of sortedGroups)for(const st of g.steps){sTotal++;if(session.progress[st.stepId]?.completed)sDone++;}
-    const sPct=sTotal?Math.round(sDone/sTotal*100):0;
-    const isExp=expandedIds.has(session.sessionId);
-    rows+=`<div class="gantt-row${isExp?' expanded':''}${hasOv?' has-ov':''}" onclick="toggleExpand('${session.sessionId}')">
-      <div class="row-label">
-        <div class="rl-name">${esc(session.name)}</div>
-        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${ipChip(session)}<span class="rl-day ${dayCls}" style="margin-top:0">${dl.text}</span></div>
-        <div class="rl-date">📅 ${fmtMD(new Date(session.liveDate))}</div>
-        ${session.note?`<div class="rl-note" title="${escA(session.note)}">📝 ${esc(session.note)}</div>`:''}
-        <div class="rl-prog"><div class="rl-prog-fill" style="width:${sPct}%"></div></div>
-        <div class="rl-prog-txt">${sDone}/${sTotal} 步驟完成（${sPct}%）<span class="rl-chevron" style="float:right">▼</span></div>
-      </div>
-      <div class="row-bars" style="min-width:${totalW}px;background-image:repeating-linear-gradient(to right,#f1f5f9 0 1px,transparent 1px ${DAY_PX}px)">${barsHtml}</div>
-    </div>
-    <div class="expand-panel${isExp?' open':''}" id="exp-${session.sessionId}">
-      <div class="expand-inner">${renderExpand(session,getSessionGroups(session))}</div>
-    </div>`;
-  }
-
-  /* ── legend ── */
-  const legend=`<div class="legend">
-    <div class="leg"><div class="leg-dot" style="background:#bbf7d0;border:1px solid #4ade80"></div>已完成</div>
-    <div class="leg"><div class="leg-dot" style="background:#fca5a5;border:1px solid #f87171"></div>逾期未完成</div>
-    <div class="leg"><div class="leg-dot" style="background:#fde68a;border:1px solid #fbbf24"></div>即將截止（4小時內）</div>
-    <div class="leg"><div class="leg-dot" style="background:#bfdbfe;border:1px solid #93c5fd"></div>進行中</div>
-    <div class="leg"><div class="leg-dot" style="background:#e2e8f0;border:1px solid #cbd5e1"></div>尚未開始</div>
-    <div class="leg"><span style="color:#ef4444;font-size:.8rem">│</span>&nbsp;今天</div>
-    <div class="leg" style="margin-left:auto;color:var(--text-muted)">顯示範圍：今天前 7 天 ～ 後 21 天，條上數字為該階段完成步驟數</div>
-  </div>`;
-
-  const prevScroll=board.scrollLeft;
-  board.innerHTML=`
-    <div class="gantt-header">
-      <div class="header-label">場次</div>
-      <div class="header-dates" style="min-width:${totalW}px;height:44px">
-        ${ticks}
-        <div class="today-band" style="left:${todayBandX}px;width:${DAY_PX}px"></div>
-        <div class="header-today-line" style="left:${todayX}px"></div>
-      </div>
-    </div>
-    ${rows}
-    ${legend}`;
-  if(firstBoardRender){board.scrollLeft=Math.max(0,todayX-260);firstBoardRender=false;}
-  else board.scrollLeft=prevScroll;
+  renderCards(active);
 }
 
 /* ── expand detail ──────────────────────────── */
