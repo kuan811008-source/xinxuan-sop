@@ -10,7 +10,7 @@
 :root{
   --primary:#1e40af;--header-bg:#1e293b;--border:#e2e8f0;
   --text:#1e293b;--text-sub:#64748b;--text-muted:#94a3b8;
-  --r:6px;--label-w:148px;--bar-h:34px;--row-v:12px;
+  --r:6px;--label-w:200px;--bar-h:38px;--row-v:10px;
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft JhengHei',sans-serif;
   background:#f1f5f9;color:var(--text);min-height:100vh;display:flex;flex-direction:column}
@@ -87,16 +87,25 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .rl-day.d-future{background:#f1f5f9;color:#64748b}
 .rl-day.d-live{background:#dcfce7;color:#15803d}
 .rl-chevron{font-size:.65rem;color:var(--text-muted);margin-top:2px;transition:transform .2s}
+.rl-prog{height:5px;background:#e2e8f0;border-radius:3px;margin-top:4px;overflow:hidden}
+.rl-prog-fill{height:100%;border-radius:3px;background:#22c55e;transition:width .3s}
+.rl-prog-txt{font-size:.68rem;color:var(--text-muted);margin-top:2px}
+.gantt-row.has-ov .row-label{box-shadow:inset 3px 0 0 #ef4444}
+.gantt-row.has-ov .rl-prog-fill{background:#f59e0b}
 .gantt-row.expanded .rl-chevron{transform:rotate(180deg)}
 
 .row-bars{flex:1;position:relative;padding:var(--row-v) 0;background:#fff;transition:background .1s}
 
 /* Phase bars */
-.phase-bar{position:absolute;top:var(--row-v);height:var(--bar-h);border-radius:var(--r);
-  display:flex;align-items:center;justify-content:center;overflow:hidden;
-  border:1px solid transparent;transition:filter .15s;pointer-events:none}
-.bar-lbl{font-size:.68rem;font-weight:600;padding:0 5px;white-space:nowrap;
+.phase-bar{position:absolute;top:50%;transform:translateY(-50%);height:var(--bar-h);border-radius:var(--r);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;
+  border:1px solid transparent;transition:filter .15s;cursor:pointer;z-index:2}
+.phase-bar:hover{filter:brightness(.95)}
+.clip-l{border-top-left-radius:0;border-bottom-left-radius:0;border-left-style:dashed}
+.clip-r{border-top-right-radius:0;border-bottom-right-radius:0;border-right-style:dashed}
+.bar-lbl{font-size:.7rem;font-weight:700;padding:0 6px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center}
+.bar-sub{font-size:.6rem;font-weight:600;opacity:.8;white-space:nowrap}
 /* Colors */
 .bc-future{background:#e2e8f0;border-color:#cbd5e1;color:#64748b}
 .bc-normal{background:#bfdbfe;border-color:#93c5fd;color:#1e40af}
@@ -104,10 +113,17 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .bc-overdue{background:#fca5a5;border-color:#f87171;color:#991b1b}
 .bc-done  {background:#bbf7d0;border-color:#4ade80;color:#166534}
 
-/* Today vertical line */
+/* Today vertical line + band */
 .today-line{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;
   opacity:.75;pointer-events:none;z-index:4}
 .header-today-line{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;opacity:.6}
+.today-band{position:absolute;top:0;bottom:0;background:rgba(239,68,68,.045);pointer-events:none;z-index:1}
+.ov-chip{position:absolute;top:50%;transform:translateY(-50%);z-index:2;
+  background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;font-size:.72rem;font-weight:600;
+  padding:4px 12px;border-radius:14px;white-space:nowrap;pointer-events:none}
+.fut-chip{position:absolute;top:50%;transform:translateY(-50%);z-index:2;
+  background:#f1f5f9;border:1px solid #cbd5e1;color:#64748b;font-size:.72rem;font-weight:600;
+  padding:4px 12px;border-radius:14px;white-space:nowrap;pointer-events:none}
 
 /* Expand panel */
 .expand-panel{display:none;border-bottom:1px solid var(--border);background:#f0f6ff}
@@ -206,7 +222,8 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 
 /* Legend */
 .legend{display:flex;gap:12px;padding:12px 16px;flex-wrap:wrap;
-  border-top:1px solid var(--border);background:#f8fafc;border-radius:0 0 10px 10px}
+  border-top:1px solid var(--border);background:#f8fafc;border-radius:0 0 10px 10px;
+  position:sticky;left:0}
 .leg{display:flex;align-items:center;gap:5px;font-size:.73rem;color:var(--text-sub)}
 .leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
 
@@ -505,6 +522,7 @@ function toggleMobileCard(sid){
 }
 
 /* ── main render ────────────────────────────── */
+let firstBoardRender=true;
 function render(){
   renderIpTabs();
   const active=activeSessions();
@@ -517,23 +535,17 @@ function render(){
   mCards.style.display='none';
   board.style.display='block';
 
-  /* X-axis range (snap to day boundaries) — per-session templates */
-  const liveTimes=active.map(s=>new Date(s.liveDate).getTime());
-  const endTimes=active.map(s=>{
-    const grps=getSessionGroups(s);
-    const maxOff=grps.length?grps[grps.length-1].offsetHours:336;
-    return new Date(s.liveDate).getTime()+maxOff*3600000;
-  });
-  const xMinRaw=Math.min(...liveTimes,Date.now()-DAY_MS);
-  const xMaxRaw=Math.max(...endTimes,Date.now()+DAY_MS);
-  const xMin=Math.floor(xMinRaw/DAY_MS)*DAY_MS;
-  const xMax=Math.ceil(xMaxRaw/DAY_MS)*DAY_MS+DAY_MS;
+  /* X-axis：聚焦視窗（今天前7天～後21天），過舊/過新的階段以提示章呈現 */
+  const todayMs=Math.floor(Date.now()/DAY_MS)*DAY_MS;
+  const xMin=todayMs-7*DAY_MS;
+  const xMax=todayMs+22*DAY_MS;
   const totalDays=Math.round((xMax-xMin)/DAY_MS);
   const DAY_PX=window.innerWidth<=640?36:48;
   const totalW=totalDays*DAY_PX;
 
   function toX(ts){return(ts-xMin)/DAY_MS*DAY_PX;}
   const todayX=toX(Date.now());
+  const todayBandX=toX(todayMs);
 
   /* ── date header ── */
   let ticks='';
@@ -558,33 +570,54 @@ function render(){
     const hasWn=!hasOv&&sortedGroups.some(g=>g.steps.some(st=>stepStatus(st.stepId,g,session).s==='WARN'));
     const dayCls=hasOv?'d-overdue':hasWn?'d-warn':dl.cls;
 
-    /* bars */
-    let barsHtml='';
+    /* bars（裁切至視窗內，附進度與 tooltip） */
+    let barsHtml=`<div class="today-band" style="left:${todayBandX}px;width:${DAY_PX}px"></div>`;
+    let anyVisible=false,lastEnd=0,firstStart=Infinity;
     for(let i=0;i<sortedGroups.length;i++){
       const g=sortedGroups[i];
       const prevOffset=i>0?sortedGroups[i-1].offsetHours:0;
       const barStart=liveTs+prevOffset*3600000;
       const barEnd=liveTs+g.offsetHours*3600000;
-      const bx=toX(barStart);
-      const bw=Math.max(4,toX(barEnd)-bx-1);
+      lastEnd=Math.max(lastEnd,barEnd);firstStart=Math.min(firstStart,barStart);
+      let bx=toX(barStart),bex=toX(barEnd);
+      if(bex<=0||bx>=totalW)continue;
+      const clipL=bx<0,clipR=bex>totalW;
+      bx=Math.max(0,bx);bex=Math.min(totalW,bex);
+      const bw=Math.max(4,bex-bx-1);
+      anyVisible=true;
       const cls=barClass(g,session,barStart,barEnd);
-      barsHtml+=`<div class="phase-bar ${cls}" style="left:${bx}px;width:${bw}px">
-        <span class="bar-lbl">${abbr(g.groupName)}</span>
+      let done=0;for(const st of g.steps)if(session.progress[st.stepId]?.completed)done++;
+      const total=g.steps.length;
+      const prog=total?(done===total?'✓':`${done}/${total}`):'';
+      const tip=`${g.groupName}\n截止：${fmtDt(new Date(liveTs+g.offsetHours*3600000).toISOString())}\n進度：${done}/${total} 步驟完成`;
+      barsHtml+=`<div class="phase-bar ${cls}${clipL?' clip-l':''}${clipR?' clip-r':''}" style="left:${bx}px;width:${bw}px" title="${escA(tip)}">
+        <span class="bar-lbl">${clipL?'‹ ':''}${abbr(g.groupName)}${prog?` ${prog}`:''}${clipR?' ›':''}</span>
       </div>`;
+    }
+    if(!anyVisible){
+      if(lastEnd&&lastEnd<xMin){
+        const dOver=Math.round((todayMs-lastEnd)/DAY_MS);
+        barsHtml+=`<div class="ov-chip" style="left:${todayX+12}px">⚠ 全部階段已超過 ${dOver} 天，點擊展開查看</div>`;
+      }else if(firstStart>xMax){
+        barsHtml+=`<div class="fut-chip" style="left:${todayX+12}px">尚未開始 · ${fmtMD(new Date(liveTs))} 直播 →</div>`;
+      }
     }
     barsHtml+=`<div class="today-line" style="left:${todayX}px"></div>`;
 
+    let sTotal=0,sDone=0;
+    for(const g of sortedGroups)for(const st of g.steps){sTotal++;if(session.progress[st.stepId]?.completed)sDone++;}
+    const sPct=sTotal?Math.round(sDone/sTotal*100):0;
     const isExp=expandedIds.has(session.sessionId);
-    rows+=`<div class="gantt-row${isExp?' expanded':''}" onclick="toggleExpand('${session.sessionId}')">
+    rows+=`<div class="gantt-row${isExp?' expanded':''}${hasOv?' has-ov':''}" onclick="toggleExpand('${session.sessionId}')">
       <div class="row-label">
         <div class="rl-name">${esc(session.name)}</div>
-        ${ipChip(session)}
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${ipChip(session)}<span class="rl-day ${dayCls}" style="margin-top:0">${dl.text}</span></div>
         <div class="rl-date">📅 ${fmtMD(new Date(session.liveDate))}</div>
         ${session.note?`<div class="rl-note" title="${escA(session.note)}">📝 ${esc(session.note)}</div>`:''}
-        <span class="rl-day ${dayCls}">${dl.text}</span>
-        <span class="rl-chevron">▼</span>
+        <div class="rl-prog"><div class="rl-prog-fill" style="width:${sPct}%"></div></div>
+        <div class="rl-prog-txt">${sDone}/${sTotal} 步驟完成（${sPct}%）<span class="rl-chevron" style="float:right">▼</span></div>
       </div>
-      <div class="row-bars" style="min-width:${totalW}px">${barsHtml}</div>
+      <div class="row-bars" style="min-width:${totalW}px;background-image:repeating-linear-gradient(to right,#f1f5f9 0 1px,transparent 1px ${DAY_PX}px)">${barsHtml}</div>
     </div>
     <div class="expand-panel${isExp?' open':''}" id="exp-${session.sessionId}">
       <div class="expand-inner">${renderExpand(session,getSessionGroups(session))}</div>
@@ -598,19 +631,24 @@ function render(){
     <div class="leg"><div class="leg-dot" style="background:#fde68a;border:1px solid #fbbf24"></div>即將截止（4小時內）</div>
     <div class="leg"><div class="leg-dot" style="background:#bfdbfe;border:1px solid #93c5fd"></div>進行中</div>
     <div class="leg"><div class="leg-dot" style="background:#e2e8f0;border:1px solid #cbd5e1"></div>尚未開始</div>
-    <div class="leg" style="margin-left:auto"><span style="color:#ef4444;font-size:.8rem">│</span>&nbsp;今天</div>
+    <div class="leg"><span style="color:#ef4444;font-size:.8rem">│</span>&nbsp;今天</div>
+    <div class="leg" style="margin-left:auto;color:var(--text-muted)">顯示範圍：今天前 7 天 ～ 後 21 天，條上數字為該階段完成步驟數</div>
   </div>`;
 
+  const prevScroll=board.scrollLeft;
   board.innerHTML=`
     <div class="gantt-header">
       <div class="header-label">場次</div>
       <div class="header-dates" style="min-width:${totalW}px;height:44px">
         ${ticks}
+        <div class="today-band" style="left:${todayBandX}px;width:${DAY_PX}px"></div>
         <div class="header-today-line" style="left:${todayX}px"></div>
       </div>
     </div>
     ${rows}
     ${legend}`;
+  if(firstBoardRender){board.scrollLeft=Math.max(0,todayX-260);firstBoardRender=false;}
+  else board.scrollLeft=prevScroll;
 }
 
 /* ── expand detail ──────────────────────────── */
