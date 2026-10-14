@@ -174,6 +174,23 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .ip-chip{display:inline-flex;align-items:center;gap:4px;font-size:.66rem;font-weight:700;
   padding:1px 7px;border-radius:9px;white-space:nowrap;width:fit-content}
 
+/* 台灣端出貨實況（金山文檔同步） */
+.wh-line{display:flex;align-items:center;gap:6px;font-size:.76rem;color:#1d4ed8;
+  background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;padding:6px 10px;margin-bottom:10px}
+.wh-block{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.wh-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:.8rem;font-weight:700;color:#1d4ed8;margin-bottom:8px;flex-wrap:wrap}
+.wh-hd span{font-weight:500;font-size:.7rem;color:#60a5fa}
+.wh-v{background:#fff;border:1px solid #dbeafe;border-radius:7px;padding:8px 10px;margin-bottom:6px}
+.wh-v:last-child{margin-bottom:0}
+.wh-vendor{font-size:.82rem;font-weight:700;margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.wh-kvs{display:flex;flex-wrap:wrap;gap:4px 6px}
+.wh-kv{font-size:.72rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
+  padding:2px 8px;color:#475569;white-space:nowrap}
+.wh-kv b{color:var(--text);font-weight:600}
+.wh-kv.on{background:#f0fdf4;border-color:#bbf7d0}.wh-kv.on b{color:#15803d}
+.wh-remark{font-size:.72rem;color:#a16207;margin-top:5px;white-space:pre-wrap;word-break:break-word}
+
 /* Notes */
 .sess-note{display:flex;gap:7px;align-items:flex-start;background:#fefce8;border:1px solid #fde047;
   border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.82rem;line-height:1.55;
@@ -336,7 +353,7 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-let appData={sopTemplates:[],sessions:[],ips:[]};
+let appData={sopTemplates:[],sessions:[],ips:[],wh:[]};
 let expandedIds=new Set();
 let curIp='all';
 try{curIp=localStorage.getItem('xinxuan_ip')||'all';}catch(e){}
@@ -357,16 +374,18 @@ function abbr(name){
 
 /* ── data loading ───────────────────────────── */
 async function loadData(){
-  const[tplR,grpR,stpR,sesR,prR,ipR]=await Promise.all([
+  const[tplR,grpR,stpR,sesR,prR,ipR,whR]=await Promise.all([
     db.from('sop_templates').select('*').order('sort_order'),
     db.from('sop_groups').select('*').order('offset_hours'),
     db.from('sop_steps').select('*').order('sort_order'),
     db.from('sessions').select('*').order('live_date',{ascending:true}),
     db.from('session_progress').select('*'),
-    db.from('live_ips').select('*').order('sort_order')
+    db.from('live_ips').select('*').order('sort_order'),
+    db.from('warehouse_sync').select('*')
   ]);
   const templates=tplR.data||[],groups=grpR.data||[],steps=stpR.data||[],sessions=sesR.data||[],progress=prR.data||[];
   appData.ips=(ipR.data||[]).map(i=>({ipId:i.id,name:i.name,color:i.color||'#3b82f6'}));
+  appData.wh=whR.data||[];
   appData.sopTemplates=templates.map(t=>({
     templateId:t.id,name:t.name,
     groups:groups.filter(g=>g.template_id===t.id).map(g=>({
@@ -507,6 +526,40 @@ function barClass(group,session,phaseStartTs,phaseEndTs){
 
 /* ── mobile card render ─────────────────────── */
 
+/* ── 台灣端出貨實況（金山文檔同步） ─────────── */
+function whOf(session){
+  const m=String(session.name).match(/\d{4}/);
+  if(!m)return[];
+  return appData.wh.filter(r=>r.session_key===m[0]);
+}
+function whKv(label,val,done){
+  const v=(val==null||String(val).trim()===''||String(val).trim().toLowerCase()==='x')?'—':String(val).trim();
+  return`<span class="wh-kv${done&&v!=='—'?' on':''}">${label} <b>${esc(v).replace(/\n/g,' / ')}</b></span>`;
+}
+function whBlock(session){
+  const rows=whOf(session);
+  if(!rows.length)return'';
+  let latest=0;rows.forEach(r=>{const t=new Date(r.synced_at||0).getTime();if(t>latest)latest=t;});
+  const body=rows.map(r=>`<div class="wh-v">
+    <div class="wh-vendor">${esc(r.vendor||r.session_name||'—')}${r.cart?`<span class="wh-kv">${esc(r.cart)}</span>`:''}${r.closed?`<span class="wh-kv">已結案</span>`:''}</div>
+    <div class="wh-kvs">
+      ${whKv('叫貨',r.order_time)}
+      ${whKv('包裝場',r.packing_site)}
+      ${whKv('清點單',r.checklist,true)}
+      ${whKv('到貨',r.arrival,true)}
+      ${whKv('清點',r.counting,true)}
+      ${whKv('出貨單數',r.ship_counts)}
+      ${whKv('開始出貨',r.ship_start,true)}
+      ${whKv('出貨完成',r.ship_done,true)}
+    </div>
+    ${r.remark?`<div class="wh-remark">💬 ${esc(r.remark)}</div>`:''}
+  </div>`).join('');
+  return`<div class="wh-block">
+    <div class="wh-hd">☁ 台灣端出貨實況<span>同步於 ${latest?fmtShort(new Date(latest).toISOString()):'—'} · 來源：金山文檔</span></div>
+    ${body}
+  </div>`;
+}
+
 /* ── 階段狀態卡片 ───────────────────────────── */
 function nextPending(session){
   const groups=getSessionGroups(session).filter(g=>g.steps.length);
@@ -573,6 +626,7 @@ function renderCards(active){
         <div class="mc-pbar"><div class="mc-pbar-fill${ovSteps?' pb-warn':''}" style="width:${pct}%"></div></div>
         <div class="mc-pct"><b>${done} / ${total}</b> 步驟完成（${pct}%）</div>
         ${ndl}
+        ${whOf(session).length?`<div class="wh-line">☁ 台灣端出貨實況 ${whOf(session).length} 筆 — 點「展開步驟詳情」查看</div>`:''}
         <div class="stage-pills">${pills}</div>
       </div>
       <div class="mc-toggle" onclick="toggleCard('${session.sessionId}')">
@@ -608,7 +662,7 @@ function renderExpand(session,sortedGroups){
   const noteHtml=session.note
     ?`<div class="sess-note" onclick="openSessionNote(event,'${session.sessionId}')" title="點擊編輯備註">📝<span class="sn-text">${esc(session.note)}</span><span style="opacity:.45">✏</span></div>`
     :`<button class="sess-note-add" onclick="openSessionNote(event,'${session.sessionId}')">📝 ＋ 新增場次備註</button>`;
-  return noteHtml+sortedGroups.map((g,i)=>{
+  return noteHtml+whBlock(session)+sortedGroups.map((g,i)=>{
     const gs=groupStatus(g,session);
     const[bc,bt]={DONE:['b-dn','✓ 完成'],OVERDUE:['b-ov','⚠ 逾期'],WARN:['b-wn','⏰ 即將'],
       OK:['b-nm','進行中'],FUTURE:['b-nm','未開始']}[gs]||['b-nm','進行中'];
