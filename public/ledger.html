@@ -24,6 +24,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft JhengHei
   border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading-text{font-size:.9rem;color:var(--text-sub)}
+/* auth / login */
+.auth-screen{position:fixed;inset:0;background:linear-gradient(160deg,#eef2f7,#e2e8f0);z-index:900;
+  display:none;align-items:center;justify-content:center;padding:20px}
+.auth-screen.show{display:flex}
+.auth-card{background:#fff;border:1px solid var(--border);border-radius:16px;
+  box-shadow:0 12px 40px rgba(15,23,42,.1);padding:32px 28px;width:380px;max-width:100%}
+.auth-logo{text-align:center;font-size:1.35rem;font-weight:800;letter-spacing:.02em}
+.auth-logo em{color:var(--primary);font-style:normal}
+.auth-sub{text-align:center;font-size:.82rem;color:var(--text-muted);margin:6px 0 24px}
+.auth-field{margin-bottom:14px}
+.auth-field label{display:block;font-size:.8rem;font-weight:600;color:var(--text-sub);margin-bottom:6px}
+.auth-field input{width:100%;padding:11px 13px;border:1px solid #cbd5e1;border-radius:9px;
+  font-size:.92rem;font-family:inherit;color:var(--text);transition:border-color .15s}
+.auth-field input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(30,64,175,.12)}
+.auth-btn{width:100%;padding:12px;border:none;border-radius:9px;font-size:.92rem;font-weight:600;
+  cursor:pointer;font-family:inherit}
+.auth-btn.primary{background:var(--primary);color:#fff;margin-top:8px}
+.auth-btn.primary:hover{background:var(--primary-hover)}
+.auth-btn.ghost{background:#fff;color:var(--text-sub);border:1px solid var(--border);margin-top:10px}
+.auth-btn.ghost:hover{background:#f1f5f9}
+.auth-btn:disabled{opacity:.55;cursor:not-allowed}
+.auth-msg{font-size:.8rem;margin-top:15px;padding:10px 12px;border-radius:8px;display:none;line-height:1.55}
+.auth-msg.show{display:block}
+.auth-msg.err{background:var(--overdue-bg);color:var(--overdue-text)}
+.auth-msg.ok{background:var(--done-bg);color:var(--done-text)}
+.auth-hint{font-size:.74rem;color:var(--text-muted);text-align:center;margin-top:18px;line-height:1.7}
+.user-chip{font-size:.74rem;color:#cbd5e1;max-width:170px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;padding-right:2px}
 header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:10}
 .h-title{font-size:1.05rem;font-weight:700;letter-spacing:.02em}
@@ -198,6 +226,8 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   .h-title{font-size:1rem}
   .h-right{gap:6px;flex-wrap:wrap;justify-content:flex-end}
   .conn-badge{font-size:.68rem;padding:3px 9px}
+  .user-chip{display:none}
+  .auth-card{padding:26px 20px}
   .h-actions{gap:6px}
   .h-actions .btn,.h-link{padding:6px 10px;font-size:.78rem}
   .wrap{padding:14px}
@@ -245,6 +275,21 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 </head>
 <body>
 
+<div class="auth-screen" id="authScreen">
+  <div class="auth-card">
+    <div class="auth-logo">個人<em>記帳本</em></div>
+    <div class="auth-sub">請登入以使用你的記帳本</div>
+    <div class="auth-field"><label>Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="username"></div>
+    <div class="auth-field"><label>密碼</label>
+      <input type="password" id="authPw" placeholder="至少 6 碼" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="auth-btn primary" id="loginBtn" onclick="doLogin()">登入</button>
+    <button class="auth-btn ghost" id="signupBtn" onclick="doSignup()">註冊新帳號</button>
+    <div class="auth-msg" id="authMsg"></div>
+    <div class="auth-hint">第一次使用請先「註冊新帳號」<br>每個帳號的記帳資料各自獨立、互相看不到</div>
+  </div>
+</div>
+
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
   <div class="loading-text">連線至資料庫中...</div>
@@ -255,9 +300,11 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <div class="h-right">
     <span class="conn-badge conn-wait" id="connBadge">● 連線中</span>
     <div class="h-actions">
+      <span class="user-chip" id="userChip"></span>
       <button class="btn btn-dark btn-sm" onclick="exportData()">↑ 匯出</button>
       <button class="btn btn-dark btn-sm" onclick="document.getElementById('importInput').click()">↓ 匯入</button>
       <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">
+      <button class="btn btn-dark btn-sm" id="logoutBtn" onclick="doLogout()" style="display:none">登出</button>
     </div>
   </div>
 </header>
@@ -332,8 +379,9 @@ let entries=[];
 let filterMonth='',filterType='all',filterCat='all',filterSearch='';
 let annualYear=null;
 const PIE_COLORS=['#3b82f6','#ef4444','#f59e0b','#22c55e','#8b5cf6','#ec4899','#14b8a6','#f97316','#64748b','#eab308','#06b6d4','#a855f7'];
-// 每月預算存本機（此裝置私有），不進雲端
-const BUDGET_KEY='xinxuan_ledger_budget';
+// 每月預算存本機（此裝置私有），不進雲端；登入後會依使用者區分
+let BUDGET_KEY='xinxuan_ledger_budget';
+let currentUser=null;
 let monthlyBudget=0;
 function loadBudget(){const v=parseFloat(localStorage.getItem(BUDGET_KEY));monthlyBudget=isNaN(v)?0:v;}
 function saveBudgetVal(v){monthlyBudget=v;try{localStorage.setItem(BUDGET_KEY,String(v));}catch(e){}}
@@ -613,7 +661,7 @@ async function saveEntry(id){
   const row={entry_date:date,type:modalType,category,amount,note};
   try{
     if(id){await db.from('ledger_entries').update(row).eq('id',id);}
-    else{await db.from('ledger_entries').insert({id:genId(),...row});}
+    else{await db.from('ledger_entries').insert({id:genId(),user_id:currentUser.id,...row});}
     await loadFromDB();
     // jump filter to the month we just wrote so the user sees it
     filterMonth=monthOf(date);
@@ -664,7 +712,7 @@ async function importData(event){
         const type=(r.type==='income'||r.type==='expense')?r.type:'expense';
         const amount=parseFloat(r.amount)||0;
         await db.from('ledger_entries').insert({
-          id:r.id,entry_date:r.date||r.entry_date,type,
+          id:r.id,user_id:currentUser.id,entry_date:r.date||r.entry_date,type,
           category:r.category||'',amount,note:r.note||''
         });
         n++;
@@ -747,14 +795,68 @@ let toastTimer;
 function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2200);}
 function hideLoading(){const el=document.getElementById('loadingOverlay');if(el){el.style.opacity='0';el.style.transition='opacity .4s';setTimeout(()=>el.remove(),400);}}
 
-filterMonth=curMonth();
-loadBudget();
+// ── AUTH ──────────────────────────────────────────────────
+let appStarted=false;
+function showAuth(show){document.getElementById('authScreen').classList.toggle('show',show);}
+function showAuthMsg(msg,type){const el=document.getElementById('authMsg');el.textContent=msg;el.className='auth-msg show '+(type||'err');}
+function clearAuthMsg(){document.getElementById('authMsg').className='auth-msg';}
+function authBusy(b){document.getElementById('loginBtn').disabled=b;document.getElementById('signupBtn').disabled=b;}
+function mapAuthErr(e){
+  const m=((e&&e.message)||'').toLowerCase();
+  if(m.includes('invalid login'))return'Email 或密碼錯誤';
+  if(m.includes('already registered')||m.includes('already been registered'))return'這個 Email 已註冊過，請直接登入';
+  if(m.includes('confirm'))return'請先到信箱點開確認信，再回來登入';
+  if(m.includes('6')&&m.includes('password'))return'密碼至少需要 6 碼';
+  if(m.includes('rate'))return'嘗試太頻繁，請稍候再試';
+  if(m.includes('relation')||m.includes('user_id'))return'資料庫尚未設定完成，請先在 Supabase 執行建表／權限 SQL';
+  return (e&&e.message)||'發生錯誤，請再試一次';
+}
+async function doLogin(){
+  const email=document.getElementById('authEmail').value.trim();
+  const pw=document.getElementById('authPw').value;
+  if(!email||!pw){showAuthMsg('請輸入 Email 和密碼');return;}
+  clearAuthMsg();authBusy(true);
+  const{error}=await db.auth.signInWithPassword({email,password:pw});
+  authBusy(false);
+  if(error){showAuthMsg(mapAuthErr(error));return;}
+  // onAuthStateChange → enterApp
+}
+async function doSignup(){
+  const email=document.getElementById('authEmail').value.trim();
+  const pw=document.getElementById('authPw').value;
+  if(!email||!pw){showAuthMsg('請輸入 Email 和密碼');return;}
+  if(pw.length<6){showAuthMsg('密碼至少需要 6 碼');return;}
+  clearAuthMsg();authBusy(true);
+  const{data,error}=await db.auth.signUp({email,password:pw});
+  authBusy(false);
+  if(error){showAuthMsg(mapAuthErr(error));return;}
+  if(data&&data.session){showAuthMsg('註冊成功！登入中…','ok');}
+  else{showAuthMsg('註冊成功！請到信箱點開確認信後，再回來登入','ok');}
+}
+async function doLogout(){try{await db.auth.signOut();}catch(e){}location.reload();}
+function enterApp(user){
+  if(appStarted)return;appStarted=true;
+  currentUser=user;
+  showAuth(false);
+  document.getElementById('userChip').textContent=user.email||'';
+  document.getElementById('logoutBtn').style.display='';
+  BUDGET_KEY='xinxuan_ledger_budget_'+user.id;loadBudget();
+  filterMonth=curMonth();
+  (async()=>{
+    await loadFromDB();
+    hideLoading();
+    render();
+    setupRealtime();
+    setInterval(()=>loadFromDB().then(render),30000);
+  })();
+}
 (async()=>{
-  await loadFromDB();
-  hideLoading();
-  render();
-  setupRealtime();
-  setInterval(()=>loadFromDB().then(render),30000);
+  const{data:{session}}=await db.auth.getSession();
+  if(session&&session.user){enterApp(session.user);}
+  else{hideLoading();showAuth(true);}
+  db.auth.onAuthStateChange((ev,sess)=>{
+    if((ev==='SIGNED_IN'||ev==='INITIAL_SESSION')&&sess&&sess.user)enterApp(sess.user);
+  });
 })();
 </script>
 </body>
