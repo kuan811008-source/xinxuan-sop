@@ -103,11 +103,15 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .pie-li .pl-pct{color:var(--text-muted);font-size:.72rem;width:36px;text-align:right}
 .pie-empty{display:flex;align-items:center;justify-content:center;height:128px;color:var(--text-muted);font-size:.82rem;width:100%}
 /* budget */
-.budget{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 16px;margin-bottom:18px}
-.bg-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap}
-.bg-title{font-size:.84rem;font-weight:700;display:flex;align-items:center;gap:7px}
-.bg-info{font-size:.8rem;color:var(--text-sub)}
-.bg-info b{color:var(--text)}
+.budget{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;margin-bottom:18px}
+.bg-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.bg-title{font-size:.92rem;font-weight:700;display:flex;align-items:center;gap:7px}
+.bg-edit{width:30px;height:30px;border:1px solid var(--border);border-radius:7px;background:#fff;cursor:pointer;font-size:.9rem;color:var(--text-sub);display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.bg-edit:hover{background:#f1f5f9}
+.bg-stats{display:flex;gap:12px;margin-bottom:14px}
+.bg-stat{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.bg-stat .s-lbl{font-size:.72rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bg-stat .s-val{font-size:1.02rem;font-weight:700;color:var(--text);white-space:nowrap}
 .bg-bar{height:10px;background:#e2e8f0;border-radius:6px;overflow:hidden}
 .bg-fill{height:100%;border-radius:6px;transition:width .4s}
 .bg-fill.ok{background:var(--done-badge)}
@@ -190,26 +194,51 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 /* mobile */
 @media(max-width:640px){
-  header{height:auto;min-height:48px;padding:8px 12px;flex-wrap:wrap;gap:4px}
-  .h-title{font-size:.9rem}
-  .h-right{gap:5px;flex-wrap:wrap;justify-content:flex-end}
-  .conn-badge{display:none}
-  .h-actions .btn,.h-link{padding:5px 9px;font-size:.76rem}
-  .wrap{padding:12px}
-  .sum-row{grid-template-columns:repeat(2,1fr);gap:9px}
-  .sum-num{font-size:1.25rem}
-  .cbar{width:18px}
-  .cbar-pair{gap:3px}
-  .toolbar{gap:8px}
+  header{height:auto;min-height:52px;padding:9px 14px;flex-wrap:wrap;gap:6px 8px}
+  .h-title{font-size:1rem}
+  .h-right{gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .conn-badge{font-size:.68rem;padding:3px 9px}
+  .h-actions{gap:6px}
+  .h-actions .btn,.h-link{padding:6px 10px;font-size:.78rem}
+  .wrap{padding:14px}
+  /* summary cards: 2x2 with breathing room */
+  .sum-row{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+  .sum-card{padding:13px 13px}
+  .sum-lbl{font-size:.72rem;margin-bottom:5px}
+  .sum-num{font-size:1.2rem}
+  /* budget */
+  .budget{padding:15px;margin-bottom:14px}
+  .bg-stats{gap:9px;margin-bottom:13px}
+  .bg-stat .s-lbl{font-size:.68rem}
+  .bg-stat .s-val{font-size:.92rem}
+  /* toolbar: tidy 2-col grid, no cramping */
+  .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .tb-field{flex-direction:column;align-items:stretch;gap:5px}
+  .tb-field label{font-size:.72rem}
+  .ctrl{width:100%;padding:9px 11px;font-size:.86rem}
+  .tb-cat,.tb-search{grid-column:1 / -1}
+  .tb-search{justify-content:flex-end}
+  .tb-search input{width:100%;padding:9px 11px 9px 32px;font-size:.86rem}
+  .tb-search::before{top:auto;bottom:11px;transform:none}
   .tb-spacer{display:none}
-  .toolbar .btn{flex:1;justify-content:center}
-  .charts-row{grid-template-columns:1fr}
-  .tb-search{flex:1}
-  .tb-search input{width:100%}
-  .modal-box.wide{width:95vw}
-  .yr-table th,.yr-table td{padding:5px 5px;font-size:.74rem}
-  .ent-amt{font-size:.96rem}
-  .modal-box{max-width:95vw;padding:18px}
+  .toolbar .btn{width:100%;justify-content:center;padding:11px}
+  /* charts stack */
+  .charts-row{grid-template-columns:1fr;gap:12px;margin-bottom:14px}
+  .card{padding:15px}
+  .cbar{width:20px}
+  .cbar-pair{gap:4px}
+  /* list rows */
+  .list-hd{margin-bottom:9px}
+  .ent-row{padding:12px;gap:11px}
+  .ent-note{font-size:.78rem}
+  .ent-amt{font-size:1rem}
+  .icon-btn{width:32px;height:32px}
+  /* modal */
+  .modal-box{max-width:94vw;padding:20px}
+  .modal-box.wide{width:94vw}
+  .yr-tiles{gap:8px}
+  .yr-tile .t-num{font-size:.92rem}
+  .yr-table th,.yr-table td{padding:6px 5px;font-size:.75rem}
   .toast{bottom:20px;max-width:88vw;white-space:normal;text-align:center}
 }
 </style>
@@ -252,7 +281,7 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
           <option value="expense">支出</option>
         </select>
       </div>
-      <div class="tb-field">
+      <div class="tb-field tb-cat">
         <label>分類</label>
         <select class="ctrl" id="catSel" onchange="onFilterChange()"></select>
       </div>
@@ -454,8 +483,12 @@ function renderBudget(){
   el.innerHTML=`<div class="budget">
     <div class="bg-top">
       <div class="bg-title">🎯 ${label} 預算</div>
-      <div class="bg-info">預算 <b>${fmtMoney(monthlyBudget)}</b> · 已花 <b>${fmtMoney(spent)}</b>（${Math.round(pct)}%） · 剩 <b class="${remain>=0?'pos':'neg'}">${fmtMoney(remain)}</b>
-        <button class="btn btn-ghost btn-sm" style="margin-left:6px;padding:2px 8px" onclick="openBudgetModal()">⚙</button></div>
+      <button class="bg-edit" onclick="openBudgetModal()" title="設定預算">⚙</button>
+    </div>
+    <div class="bg-stats">
+      <div class="bg-stat"><span class="s-lbl">預算</span><span class="s-val">${fmtMoney(monthlyBudget)}</span></div>
+      <div class="bg-stat"><span class="s-lbl">已花 ${Math.round(pct)}%</span><span class="s-val">${fmtMoney(spent)}</span></div>
+      <div class="bg-stat"><span class="s-lbl">剩餘</span><span class="s-val ${remain>=0?'pos':'neg'}">${fmtMoney(remain)}</span></div>
     </div>
     <div class="bg-bar"><div class="bg-fill ${cls}" style="width:${Math.min(100,pct)}%"></div></div>
     ${pct>100?`<div class="bg-over-msg">⚠ 本月已超支 ${fmtMoney(spent-monthlyBudget)}</div>`:''}
