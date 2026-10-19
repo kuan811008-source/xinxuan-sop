@@ -191,6 +191,19 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
 .wh-kv.on{background:#f0fdf4;border-color:#bbf7d0}.wh-kv.on b{color:#15803d}
 .wh-remark{font-size:.72rem;color:#a16207;margin-top:5px;white-space:pre-wrap;word-break:break-word}
 
+/* 階段備註與延遲 */
+.delay-line{display:flex;align-items:flex-start;gap:6px;font-size:.76rem;margin:-4px 0 10px;
+  padding:7px 11px;border-radius:7px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;line-height:1.5;flex-wrap:wrap}
+.stage-note{font-size:.74rem;color:#a16207;background:#fefce8;border:1px solid #fde047;border-radius:6px;
+  padding:5px 9px;margin-top:6px;white-space:pre-wrap;word-break:break-word;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.stage-note:hover{background:#fef9c3}
+.stage-note-add{border:1px dashed #d4c54a;background:transparent;color:#a16207;font-size:.7rem;
+  padding:3px 9px;border-radius:6px;cursor:pointer;font-family:inherit;margin-top:6px}
+.stage-note-add:hover{background:#fefce8}
+.sched-info{font-size:.68rem;color:var(--text-muted);margin-top:2px}
+.sched-info .late{color:#dc2626;font-weight:700}
+.sched-info .ontime{color:#16a34a;font-weight:600}
+
 /* Notes */
 .sess-note{display:flex;gap:7px;align-items:flex-start;background:#fefce8;border:1px solid #fde047;
   border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.82rem;line-height:1.55;
@@ -333,8 +346,8 @@ header{background:var(--header-bg);color:#f1f5f9;padding:0 20px;height:54px;
   <span class="pill pl-ov">⚠ 逾期</span>
   <span class="pill pl-wn">⏰ 即將截止</span>
   <span class="pill pl-cur">▶ 進行中</span>
-  <span class="pill pl-fut">未開始</span>
-  <span style="margin-left:auto">💬＝該階段有步驟備註 · 卡片依「最急截止」排序</span>
+  <span class="pill pl-fut">⏳ 等待上游</span>
+  <span style="margin-left:auto">各階段截止＝上一階段完成後＋工期（延遲只順延不提前）· 💬＝有備註 · 依最急截止排序</span>
 </div>
 <div class="board-wrap">
   <div class="empty-state" id="emptyState" style="display:none">
@@ -353,7 +366,7 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const{createClient}=window.supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
 
-let appData={sopTemplates:[],sessions:[],ips:[],wh:[]};
+let appData={sopTemplates:[],sessions:[],ips:[],wh:[],stageNotes:[]};
 let expandedIds=new Set();
 let curIp='all';
 try{curIp=localStorage.getItem('xinxuan_ip')||'all';}catch(e){}
@@ -374,18 +387,20 @@ function abbr(name){
 
 /* ── data loading ───────────────────────────── */
 async function loadData(){
-  const[tplR,grpR,stpR,sesR,prR,ipR,whR]=await Promise.all([
+  const[tplR,grpR,stpR,sesR,prR,ipR,whR,sgR]=await Promise.all([
     db.from('sop_templates').select('*').order('sort_order'),
     db.from('sop_groups').select('*').order('offset_hours'),
     db.from('sop_steps').select('*').order('sort_order'),
     db.from('sessions').select('*').order('live_date',{ascending:true}),
     db.from('session_progress').select('*'),
     db.from('live_ips').select('*').order('sort_order'),
-    db.from('warehouse_sync').select('*')
+    db.from('warehouse_sync').select('*'),
+    db.from('session_stage_notes').select('*')
   ]);
   const templates=tplR.data||[],groups=grpR.data||[],steps=stpR.data||[],sessions=sesR.data||[],progress=prR.data||[];
   appData.ips=(ipR.data||[]).map(i=>({ipId:i.id,name:i.name,color:i.color||'#3b82f6'}));
   appData.wh=whR.data||[];
+  appData.stageNotes=sgR.data||[];
   appData.sopTemplates=templates.map(t=>({
     templateId:t.id,name:t.name,
     groups:groups.filter(g=>g.template_id===t.id).map(g=>({
@@ -452,29 +467,61 @@ function activeSessions(){
   return a;
 }
 
-/* ── status helpers ─────────────────────────── */
-function stepStatus(stepId,group,session){
+/* ── status helpers：接力賽排程（延遲只順延、提早不提前） ── */
+const HMS=3600000;
+function buildSchedule(session){
+  const groups=getSessionGroups(session);
+  const anchor=new Date(session.liveDate).getTime();
+  const now=Date.now();
+  let prevOffset=0,prevEff=anchor,prevDone=true;
+  const map={};
+  for(const g of groups){
+    const durH=Math.max(0.5,g.offsetHours-prevOffset);
+    const plannedStart=anchor+prevOffset*HMS;
+    const start=Math.max(plannedStart,prevEff);
+    const deadline=start+durH*HMS;
+    let compl=null;
+    if(!g.steps.length)compl=Math.min(deadline,now);
+    else if(g.steps.every(st=>session.progress[st.stepId]?.completed)){
+      const ts=g.steps.map(st=>new Date(session.progress[st.stepId].completedAt||0).getTime()).filter(t=>t>0);
+      compl=ts.length?Math.max(...ts):deadline;
+    }
+    let state,delayH=0;
+    if(compl!==null){state='DONE';delayH=Math.max(0,(compl-deadline)/HMS);}
+    else if(!prevDone)state='WAIT';
+    else if(now>deadline){state='OVERDUE';delayH=(now-deadline)/HMS;}
+    else if(deadline-now<4*HMS)state='WARN';
+    else state='ACTIVE';
+    map[g.groupId]={durH,start,deadline,compl,state,delayH};
+    prevEff=compl!==null?compl:Math.max(deadline,now);
+    prevDone=compl!==null;
+    prevOffset=g.offsetHours;
+  }
+  return map;
+}
+function fmtDelay(h){
+  if(h>=24)return'+'+(h/24>=10?Math.round(h/24):(Math.round(h/24*10)/10))+'天';
+  return'+'+Math.max(1,Math.round(h))+'時';
+}
+function stepStatus(stepId,group,session,sched){
   const prog=session.progress[stepId];
   if(prog?.completed)return{s:'DONE',at:prog.completedAt};
-  const deadline=new Date(session.liveDate).getTime()+group.offsetHours*3600000,now=Date.now();
-  if(now>deadline)return{s:'OVERDUE',h:(now-deadline)/3600000};
-  if(deadline-now<4*3600000)return{s:'WARN',h:(deadline-now)/3600000};
+  const si=(sched||buildSchedule(session))[group.groupId];
+  if(!si||si.state==='WAIT')return{s:'OK'};
+  const now=Date.now();
+  if(now>si.deadline)return{s:'OVERDUE',h:(now-si.deadline)/HMS};
+  if(si.deadline-now<4*HMS)return{s:'WARN',h:(si.deadline-now)/HMS};
   return{s:'OK'};
 }
-function groupStatus(group,session){
-  const steps=group.steps||[];
-  if(!steps.length)return'FUTURE';
-  let done=0,ov=false,wn=false;
-  for(const st of steps){
-    const r=stepStatus(st.stepId,group,session);
-    if(r.s==='DONE')done++;
-    else if(r.s==='OVERDUE')ov=true;
-    else if(r.s==='WARN')wn=true;
-  }
-  if(done===steps.length)return'DONE';
-  if(ov)return'OVERDUE';
-  if(wn)return'WARN';
-  return'OK';
+function groupStatus(group,session,sched){
+  const si=(sched||buildSchedule(session))[group.groupId];
+  if(!si)return'WAIT';
+  if(si.state==='ACTIVE')return'OK';
+  return si.state;
+}
+function stageNoteOf(sessionId,groupId){
+  const r=appData.stageNotes.find(x=>x.session_id===sessionId&&x.group_id===groupId);
+  return r?r.note||'':'';
 }
 function isSessionDone(session){
   const groups=getSessionGroups(session);
@@ -561,12 +608,12 @@ function whBlock(session){
 }
 
 /* ── 階段狀態卡片 ───────────────────────────── */
-function nextPending(session){
+function nextPending(session,sched){
+  sched=sched||buildSchedule(session);
   const groups=getSessionGroups(session).filter(g=>g.steps.length);
   for(const g of groups){
-    if(!g.steps.every(st=>session.progress[st.stepId]?.completed)){
-      return{g,deadline:new Date(session.liveDate).getTime()+g.offsetHours*3600000};
-    }
+    const si=sched[g.groupId];
+    if(si&&si.state!=='DONE')return{g,deadline:si.deadline,state:si.state,delayH:si.delayH};
   }
   return null;
 }
@@ -579,11 +626,12 @@ function renderCards(active){
   wrap.style.display='grid';
   wrap.innerHTML=active.map(session=>{
     const sortedGroups=getSessionGroups(session);
+    const sched=buildSchedule(session);
     const dl=dayLabel(session.liveDate);
     let total=0,done=0,ovSteps=0,wnSteps=0;
     for(const g of sortedGroups)for(const st of g.steps){
       total++;
-      const r=stepStatus(st.stepId,g,session);
+      const r=stepStatus(st.stepId,g,session,sched);
       if(r.s==='DONE')done++;else if(r.s==='OVERDUE')ovSteps++;else if(r.s==='WARN')wnSteps++;
     }
     const pct=total?Math.round(done/total*100):0;
@@ -591,7 +639,7 @@ function renderCards(active){
     const stBadge=ovSteps?`<span class="st-badge st-ov">⚠ ${ovSteps} 項逾期</span>`
       :wnSteps?`<span class="st-badge st-wn">⏰ ${wnSteps} 項即將截止</span>`
       :`<span class="st-badge st-ok">✓ 進度正常</span>`;
-    const np=nextPending(session);
+    const np=nextPending(session,sched);
     let ndl;
     if(np){
       const diff=np.deadline-Date.now();
@@ -601,14 +649,25 @@ function renderCards(active){
       else ndl=`<div class="next-dl ndl-ok">📍 目前階段：「${esc(np.g.groupName)}」 · 截止 ${when}</div>`;
     }else ndl=`<div class="next-dl ndl-done">🎉 所有步驟已完成</div>`;
     const curId=np?.g.groupId;
+    const delayParts=[];let delayTot=0;
+    for(const g of sortedGroups){
+      const si=sched[g.groupId];
+      if(si&&si.delayH>0.05){delayTot+=si.delayH;
+        delayParts.push(`${esc(g.groupName)}${si.state==='DONE'?'':'（進行中）'} ${fmtDelay(si.delayH)}`);}
+    }
+    const delayLine=delayParts.length?`<div class="delay-line">⏱ 累計延遲 <b>${fmtDelay(delayTot)}</b>｜${delayParts.join('、')}</div>`:'';
     const pills=sortedGroups.map(g=>{
-      const gs=groupStatus(g,session);
+      const si=sched[g.groupId]||{};
+      const gs=groupStatus(g,session,sched);
       let gd=0;for(const st of g.steps)if(session.progress[st.stepId]?.completed)gd++;
       const gt=g.steps.length;
-      const hasN=g.steps.some(st=>session.progress[st.stepId]?.note);
-      const cls={DONE:'pl-done',OVERDUE:'pl-ov',WARN:'pl-wn',OK:'pl-cur',FUTURE:'pl-fut'}[gs]||'pl-fut';
-      const icon={DONE:'✓',OVERDUE:'⚠',WARN:'⏰'}[gs]||(g.groupId===curId?'▶':'');
-      return`<span class="pill ${cls}${g.groupId===curId?' cur':''}" title="${escA(g.groupName)}：${gd}/${gt} 完成">${icon?icon+' ':''}${esc(g.groupName)}${gt?` ${gd}/${gt}`:''}${hasN?' 💬':''}</span>`;
+      const hasN=g.steps.some(st=>session.progress[st.stepId]?.note)||!!stageNoteOf(session.sessionId,g.groupId);
+      const cls={DONE:'pl-done',OVERDUE:'pl-ov',WARN:'pl-wn',OK:'pl-cur',WAIT:'pl-fut'}[gs]||'pl-fut';
+      const icon={DONE:'✓',OVERDUE:'⚠',WARN:'⏰',WAIT:'⏳'}[gs]||(g.groupId===curId?'▶':'');
+      const dly=si.delayH>0.05?` <b>${fmtDelay(si.delayH)}</b>`:'';
+      const tip=gs==='WAIT'?`${g.groupName}：等待上游 · 預計截止 ${fmtShort(new Date(si.deadline).toISOString())}`
+        :`${g.groupName}：${gd}/${gt} 完成 · 截止 ${fmtShort(new Date(si.deadline).toISOString())}`;
+      return`<span class="pill ${cls}${g.groupId===curId?' cur':''}" title="${escA(tip)}">${icon?icon+' ':''}${esc(g.groupName)}${gt?` ${gd}/${gt}`:''}${dly}${hasN?' 💬':''}</span>`;
     }).join('');
     const isOpen=expandedIds.has(session.sessionId);
     return`<div class="mc${isOpen?' mc-open':''}">
@@ -626,6 +685,7 @@ function renderCards(active){
         <div class="mc-pbar"><div class="mc-pbar-fill${ovSteps?' pb-warn':''}" style="width:${pct}%"></div></div>
         <div class="mc-pct"><b>${done} / ${total}</b> 步驟完成（${pct}%）</div>
         ${ndl}
+        ${delayLine}
         ${whOf(session).length?`<div class="wh-line">☁ 台灣端出貨實況 ${whOf(session).length} 筆 — 點「展開步驟詳情」查看</div>`:''}
         <div class="stage-pills">${pills}</div>
       </div>
@@ -662,13 +722,16 @@ function renderExpand(session,sortedGroups){
   const noteHtml=session.note
     ?`<div class="sess-note" onclick="openSessionNote(event,'${session.sessionId}')" title="點擊編輯備註">📝<span class="sn-text">${esc(session.note)}</span><span style="opacity:.45">✏</span></div>`
     :`<button class="sess-note-add" onclick="openSessionNote(event,'${session.sessionId}')">📝 ＋ 新增場次備註</button>`;
+  const sched=buildSchedule(session);
   return noteHtml+whBlock(session)+sortedGroups.map((g,i)=>{
-    const gs=groupStatus(g,session);
-    const[bc,bt]={DONE:['b-dn','✓ 完成'],OVERDUE:['b-ov','⚠ 逾期'],WARN:['b-wn','⏰ 即將'],
-      OK:['b-nm','進行中'],FUTURE:['b-nm','未開始']}[gs]||['b-nm','進行中'];
+    const si=sched[g.groupId]||{};
+    const gs=groupStatus(g,session,sched);
+    const[bc,bt]={DONE:['b-dn',si.delayH>0.05?'✓ 完成（延遲'+fmtDelay(si.delayH)+'）':'✓ 準時完成'],
+      OVERDUE:['b-ov','⚠ 逾期'],WARN:['b-wn','⏰ 即將'],
+      OK:['b-nm','▶ 進行中'],WAIT:['b-nm','⏳ 等待上游']}[gs]||['b-nm','進行中'];
     const steps=[...g.steps].sort((a,b)=>(a.order||0)-(b.order||0));
     const stepsHtml=steps.map(st=>{
-      const r=stepStatus(st.stepId,g,session);
+      const r=stepStatus(st.stepId,g,session,sched);
       const p=session.progress[st.stepId];
       let ic='',cc='',nc='',tag='';
       if(r.s==='DONE'){ic='✓';cc='dn';nc='dn';
@@ -688,12 +751,22 @@ function renderExpand(session,sortedGroups){
         ${tag}
       </div>`;
     }).join('');
-    const deadline=new Date(new Date(session.liveDate).getTime()+g.offsetHours*3600000);
+    let schedLine='';
+    if(gs==='DONE'){
+      schedLine=`⏱ 工期 ${fmtDur(si.durH)} · ${si.delayH>0.05?`<span class="late">延遲 ${fmtDelay(si.delayH)}</span>`:`<span class="ontime">準時 ✓</span>`} · 完成於 ${fmtShort(new Date(si.compl).toISOString())}`;
+    }else if(gs==='WAIT'){
+      schedLine=`⏳ 等待上游完成後起算 · 預計截止 ${fmtDt(new Date(si.deadline).toISOString())}（工期 ${fmtDur(si.durH)}）`;
+    }else{
+      schedLine=`截止：${fmtDt(new Date(si.deadline).toISOString())}（工期 ${fmtDur(si.durH)}）`;
+    }
+    const sn=stageNoteOf(session.sessionId,g.groupId);
     return`<div class="exp-group">
       <div class="exp-g-hd">
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="exp-g-title">第 ${i+1} 組：${esc(g.groupName)}</div>
-          <div class="exp-g-dl">截止：${fmtDt(deadline.toISOString())}（直播 ${fmtOffset(g.offsetHours)}）</div>
+          <div class="exp-g-dl">${schedLine}</div>
+          ${sn?`<div class="stage-note" onclick="openStageNote(event,'${session.sessionId}','${g.groupId}')" title="點擊編輯階段備註">💬 ${esc(sn)}</div>`
+             :`<button class="stage-note-add" onclick="openStageNote(event,'${session.sessionId}','${g.groupId}')">📝 ＋ 階段備註</button>`}
         </div>
         <span class="badge ${bc}">${bt}</span>
       </div>
@@ -768,6 +841,31 @@ async function saveSessionNote(sessionId){
   if(error){alert('儲存失敗：'+error.message+'\n\n若訊息顯示找不到 note 欄位，請先在 Supabase SQL Editor 執行：\nalter table sessions add column if not exists note text;');return;}
   showToast(note?'場次備註已儲存 ✓':'場次備註已清除');
 }
+function openStageNote(ev,sessionId,groupId){
+  ev.stopPropagation();
+  const s=appData.sessions.find(x=>x.sessionId===sessionId);if(!s)return;
+  let gName='';for(const t of appData.sopTemplates){const g=t.groups.find(x=>x.groupId===groupId);if(g)gName=g.groupName;}
+  openModal(`<div class="modal-title">📝 階段備註</div>
+    <div class="modal-sub">${esc(s.name)} — ${esc(gName)}</div>
+    <textarea class="note-ta" id="noteTa" placeholder="例：廠商缺貨等補，本階段延遲3天">${esc(stageNoteOf(sessionId,groupId))}</textarea>
+    <div class="modal-actions">
+      <button class="m-btn m-btn-ghost" onclick="closeModal()">取消</button>
+      <button class="m-btn m-btn-primary" onclick="saveStageNote('${sessionId}','${groupId}')">儲存</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('noteTa').focus(),50);
+}
+async function saveStageNote(sessionId,groupId){
+  const note=document.getElementById('noteTa').value.trim();
+  const i=appData.stageNotes.findIndex(x=>x.session_id===sessionId&&x.group_id===groupId);
+  if(note){if(i>-1)appData.stageNotes[i].note=note;else appData.stageNotes.push({session_id:sessionId,group_id:groupId,note});}
+  else if(i>-1)appData.stageNotes.splice(i,1);
+  closeModal();render();
+  let error;
+  if(!note){({error}=await db.from('session_stage_notes').delete().eq('session_id',sessionId).eq('group_id',groupId));}
+  else{({error}=await db.from('session_stage_notes').upsert({session_id:sessionId,group_id:groupId,note,updated_at:new Date().toISOString()},{onConflict:'session_id,group_id'}));}
+  if(error){alert('儲存失敗：'+error.message+'\n\n若顯示找不到 session_stage_notes 資料表，請先執行我提供的 SQL。');return;}
+  showToast(note?'階段備註已儲存 ✓':'階段備註已清除');
+}
 function findStepName(stepId){
   for(const t of appData.sopTemplates)for(const g of t.groups){
     const st=g.steps.find(x=>x.stepId===stepId);if(st)return st.name;
@@ -829,6 +927,7 @@ function setupRealtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:'sop_steps'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'sessions'},reload)
     .on('postgres_changes',{event:'*',schema:'public',table:'session_progress'},reload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'session_stage_notes'},reload)
     .subscribe(status=>{
       const b=document.getElementById('connBadge');
       if(status==='SUBSCRIBED'){b.textContent='● 即時同步';b.className='conn-badge conn-ok';}
